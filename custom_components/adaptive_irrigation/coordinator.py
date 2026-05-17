@@ -1,18 +1,37 @@
+from __future__ import annotations
+
+import asyncio
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.event import async_call_later
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    CALIBRATION_FOLLOWUP_SECONDS,
+    CONF_CROP_COEFFICIENT,
+    CONF_FALLBACK_DURATION,
+    CONF_MAX_DURATION,
+    CONF_MIN_INTERVAL,
+    CONF_MOTION_SENSOR,
+    CONF_SENSOR_REQUIRED,
     CONF_SOIL_SENSORS,
+    CONF_SOIL_THRESHOLD,
+    CONF_VALVE_SWITCH,
+    DEFAULT_CROP_COEFFICIENT,
+    DEFAULT_FALLBACK_DURATION,
+    DEFAULT_MAX_DURATION,
+    DEFAULT_MIN_INTERVAL,
+    DEFAULT_SOIL_THRESHOLD,
     DOMAIN,
     SCAN_INTERVAL_MINUTES,
     STALE_SENSOR_HOURS,
     TREND_HOURS,
 )
+from .logic import calibrated_duration, decide, hargreaves_et
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,27 +48,194 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
         self.zone_name = entry.data["zone_name"]
         self.config = entry.data
 
+        self._auto_enabled: bool = True
+        self._last_watered: datetime | None = None
+        self._calibration: float | None = None
+        self._watering_lock = asyncio.Lock()
+        self._soil_before: float | None = None
+        self._last_duration: int = 0
+
+    # --- Entity callbacks (called after restore) ---
+
+    def set_auto_enabled(self, enabled: bool) -> None:
+        self._auto_enabled = enabled
+
+    def set_last_watered(self, dt: datetime | None) -> None:
+        self._last_watered = dt
+
+    def set_calibration(self, rate: float | None) -> None:
+        self._calibration = rate
+
+    # --- Main poll ---
+
     async def _async_update_data(self) -> dict:
         moisture = self._read_soil_moisture()
         trend = await self._read_moisture_trend()
-        return {
+        weather = await self._fetch_weather()
+        et_today = self._compute_et(weather) if weather else None
+
+        base = {
             "moisture": moisture,
             "trend": trend,
+            "et_today": et_today,
+            "last_watered": self._last_watered,
+            "calibration": self._calibration,
         }
+
+        if not self._auto_enabled:
+            return {**base, "status": "Disabled"}
+
+        # Startup / recent-watering guard
+        if self._last_watered:
+            age_min = (dt_util.utcnow() - self._last_watered).total_seconds() / 60
+            min_interval = self.config.get(CONF_MIN_INTERVAL, DEFAULT_MIN_INTERVAL)
+            if age_min < min_interval:
+                return {**base, "status": f"Idle — watered {int(age_min)} min ago"}
+
+        # Motion check
+        motion_entity = self.config.get(CONF_MOTION_SENSOR)
+        if motion_entity:
+            motion_state = self.hass.states.get(motion_entity)
+            if motion_state and motion_state.state == "on":
+                self._notify(
+                    f"irrigation_{self.zone_name}_session",
+                    f"Someone is in the {self.zone_name.replace('_', ' ')} zone — watering deferred.",
+                )
+                return {**base, "status": "Deferred — motion detected"}
+
+        # Decision
+        threshold = self.config.get(CONF_SOIL_THRESHOLD, DEFAULT_SOIL_THRESHOLD)
+        sensor_required = self.config.get(CONF_SENSOR_REQUIRED, True)
+        precip = float(weather.get("precipitation", 0) or 0) if weather else 0
+        wind = float(weather.get("wind_speed", 0) or 0) if weather else 0
+
+        decision = decide(moisture, threshold, trend, precip, wind, sensor_required)
+
+        if decision in ("WATER", "MONITOR"):
+            if self._watering_lock.locked():
+                return {**base, "status": "Watering in progress"}
+            max_dur = int(self.config.get(CONF_MAX_DURATION, DEFAULT_MAX_DURATION))
+            fallback = int(self.config.get(CONF_FALLBACK_DURATION, DEFAULT_FALLBACK_DURATION))
+            duration = calibrated_duration(
+                moisture or 0, threshold + 5, self._calibration, fallback, max_dur
+            )
+            self.hass.async_create_task(self._water_zone(duration, moisture, decision))
+            status = f"Watering — {duration} min"
+        elif decision == "SKIP":
+            msg = (
+                f"Soil is at {moisture:.0f}% — above the {threshold}% threshold."
+                if moisture is not None
+                else "Soil adequate — skipping."
+            )
+            self._notify(f"irrigation_{self.zone_name}_session", msg)
+            status = f"Skipped — soil at {moisture:.0f}%" if moisture else "Skipped"
+        elif decision == "DEFER_WIND":
+            self._notify(
+                f"irrigation_{self.zone_name}_session",
+                f"Deferred — wind at {wind:.0f} mph (limit: 25 mph).",
+            )
+            status = f"Deferred — wind {wind:.0f} mph"
+        else:
+            status = "Idle"
+
+        return {**base, "status": status}
+
+    # --- Watering ---
+
+    async def _water_zone(self, duration_min: int, soil_before: float | None, reason: str) -> None:
+        valve = self.config[CONF_VALVE_SWITCH]
+        zone_label = self.zone_name.replace("_", " ").title()
+        async with self._watering_lock:
+            _LOGGER.info("%s: opening valve for %d min (%s)", self.zone_name, duration_min, reason)
+            try:
+                await self.hass.services.async_call(
+                    "switch", "turn_on", {"entity_id": valve}, blocking=True
+                )
+                self._last_watered = dt_util.utcnow()
+                self._soil_before = soil_before
+                self._last_duration = duration_min
+                self.async_update_listeners()
+
+                soil_msg = f" Soil was at {soil_before:.0f}%." if soil_before is not None else ""
+                self._notify(
+                    f"irrigation_{self.zone_name}_session",
+                    f"Watering {zone_label} for {duration_min} min.{soil_msg}",
+                )
+                await asyncio.sleep(duration_min * 60)
+            finally:
+                await self.hass.services.async_call(
+                    "switch", "turn_off", {"entity_id": valve}, blocking=True
+                )
+                _LOGGER.info("%s: valve closed", self.zone_name)
+
+        if soil_before is not None:
+            async_call_later(self.hass, CALIBRATION_FOLLOWUP_SECONDS, self._calibration_followup)
+
+    @callback
+    def _calibration_followup(self, _now=None) -> None:
+        soil_after = self._read_soil_moisture()
+        if soil_after is None or self._soil_before is None or self._last_duration == 0:
+            return
+        rise = soil_after - self._soil_before
+        if rise <= 0:
+            _LOGGER.debug("%s: calibration skipped — no soil rise detected", self.zone_name)
+            return
+        rate = round(rise / self._last_duration, 4)
+        if self._calibration is None:
+            self._calibration = rate
+        else:
+            self._calibration = round(0.8 * self._calibration + 0.2 * rate, 4)
+        _LOGGER.info("%s: calibration updated → %.4f %%/min", self.zone_name, self._calibration)
+        self.async_update_listeners()
+
+    async def water_now(self, duration_min: int) -> None:
+        """Public entry point for the water_zone service."""
+        moisture = self._read_soil_moisture()
+        self.hass.async_create_task(self._water_zone(duration_min, moisture, "manual"))
+
+    # --- Weather + ET ---
+
+    async def _fetch_weather(self) -> dict | None:
+        try:
+            result = await self.hass.services.async_call(
+                "weather",
+                "get_forecasts",
+                {"entity_id": "weather.home", "type": "daily"},
+                blocking=True,
+                return_response=True,
+            )
+            forecasts = (result or {}).get("weather.home", {}).get("forecast", [])
+            return forecasts[0] if forecasts else None
+        except Exception as err:
+            _LOGGER.debug("%s: weather unavailable: %s", self.zone_name, err)
+            return None
+
+    def _compute_et(self, forecast: dict) -> float | None:
+        try:
+            temp_high = float(forecast["temperature"])
+            temp_low = float(forecast["templow"])
+            doy = dt_util.now().timetuple().tm_yday
+            lat = self.hass.config.latitude
+            kc = float(self.config.get(CONF_CROP_COEFFICIENT, DEFAULT_CROP_COEFFICIENT))
+            et_ref = hargreaves_et(temp_high, temp_low, lat, doy)
+            return round(et_ref * kc, 2)
+        except Exception:
+            return None
+
+    # --- Soil moisture + trend ---
 
     def _read_soil_moisture(self) -> float | None:
         sensors = self.config.get(CONF_SOIL_SENSORS, [])
         if not sensors:
             return None
         readings = []
-        now = dt_util.utcnow()
-        stale_cutoff = now - timedelta(hours=STALE_SENSOR_HOURS)
+        stale_cutoff = dt_util.utcnow() - timedelta(hours=STALE_SENSOR_HOURS)
         for entity_id in sensors:
             state = self.hass.states.get(entity_id)
             if state is None or state.state in ("unknown", "unavailable"):
                 continue
             if state.last_updated < stale_cutoff:
-                _LOGGER.warning("%s: sensor %s stale (last updated %s)", self.zone_name, entity_id, state.last_updated)
+                _LOGGER.warning("%s: %s stale (last updated %s)", self.zone_name, entity_id, state.last_updated)
                 continue
             try:
                 readings.append(float(state.state))
@@ -67,13 +253,12 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
 
         entity_id = sensors[0]
         start = dt_util.utcnow() - timedelta(hours=TREND_HOURS)
-
         try:
             states = await get_instance(self.hass).async_add_executor_job(
                 get_significant_states, self.hass, start, None, [entity_id]
             )
         except Exception as err:
-            _LOGGER.warning("%s: recorder history unavailable, trend skipped: %s", self.zone_name, err)
+            _LOGGER.warning("%s: trend query failed: %s", self.zone_name, err)
             return None
 
         readings = []
@@ -94,4 +279,19 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
         if denom == 0:
             return None
         slope = (n * sum(x * y for x, y in zip(xs, ys)) - sum(xs) * sum(ys)) / denom
-        return round(slope * 3600, 3)  # per-second → %/hour
+        return round(slope * 3600, 3)
+
+    # --- Notification helper ---
+
+    def _notify(self, notification_id: str, message: str) -> None:
+        self.hass.async_create_task(
+            self.hass.services.async_call(
+                "persistent_notification",
+                "create",
+                {
+                    "notification_id": notification_id,
+                    "title": f"Irrigation — {self.zone_name.replace('_', ' ').title()}",
+                    "message": message,
+                },
+            )
+        )

@@ -9,6 +9,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util.dt import parse_datetime
 
 from .const import DOMAIN
 from .coordinator import AdaptiveIrrigationCoordinator
@@ -26,6 +27,7 @@ async def async_setup_entry(
     async_add_entities([
         MoistureSensor(coordinator, zone),
         TrendSensor(coordinator, zone),
+        ETSensor(coordinator, zone),
         StatusSensor(coordinator, zone),
         LastWateredSensor(coordinator, zone),
         CalibrationSensor(coordinator, zone),
@@ -59,7 +61,7 @@ class MoistureSensor(_ZoneBase, SensorEntity):
 
     @property
     def native_value(self):
-        return self.coordinator.data.get("moisture")
+        return self.coordinator.data.get("moisture") if self.coordinator.data else None
 
 
 class TrendSensor(_ZoneBase, SensorEntity):
@@ -73,7 +75,21 @@ class TrendSensor(_ZoneBase, SensorEntity):
 
     @property
     def native_value(self):
-        return self.coordinator.data.get("trend")
+        return self.coordinator.data.get("trend") if self.coordinator.data else None
+
+
+class ETSensor(_ZoneBase, SensorEntity):
+    _attr_native_unit_of_measurement = "mm"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:weather-sunny"
+
+    def __init__(self, coordinator, zone):
+        super().__init__(coordinator, zone, "et_today")
+        self._attr_name = "ET Today"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("et_today") if self.coordinator.data else None
 
 
 class StatusSensor(_ZoneBase, SensorEntity):
@@ -85,7 +101,7 @@ class StatusSensor(_ZoneBase, SensorEntity):
 
     @property
     def native_value(self) -> str:
-        return "Idle"  # Phase 2 will populate this from watering decisions
+        return (self.coordinator.data.get("status") or "Idle") if self.coordinator.data else "Idle"
 
 
 class LastWateredSensor(_ZoneBase, RestoreEntity, SensorEntity):
@@ -95,25 +111,18 @@ class LastWateredSensor(_ZoneBase, RestoreEntity, SensorEntity):
     def __init__(self, coordinator, zone):
         super().__init__(coordinator, zone, "last_watered")
         self._attr_name = "Last Watered"
-        self._last_watered: datetime | None = None
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         last = await self.async_get_last_state()
         if last and last.state not in ("unknown", "unavailable", "None", "none"):
-            try:
-                from homeassistant.util.dt import parse_datetime
-                self._last_watered = parse_datetime(last.state)
-            except Exception:
-                pass
+            dt = parse_datetime(last.state)
+            if dt:
+                self.coordinator.set_last_watered(dt)
 
     @property
     def native_value(self) -> datetime | None:
-        return self._last_watered
-
-    def set_last_watered(self, dt: datetime) -> None:
-        self._last_watered = dt
-        self.async_write_ha_state()
+        return self.coordinator.data.get("last_watered") if self.coordinator.data else None
 
 
 class CalibrationSensor(_ZoneBase, RestoreEntity, SensorEntity):
@@ -124,25 +133,16 @@ class CalibrationSensor(_ZoneBase, RestoreEntity, SensorEntity):
     def __init__(self, coordinator, zone):
         super().__init__(coordinator, zone, "calibration")
         self._attr_name = "Calibration Rate"
-        self._calibration: float | None = None
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         last = await self.async_get_last_state()
         if last and last.state not in ("unknown", "unavailable", "None", "none"):
             try:
-                self._calibration = float(last.state)
+                self.coordinator.set_calibration(float(last.state))
             except ValueError:
                 pass
 
     @property
     def native_value(self) -> float | None:
-        return self._calibration
-
-    def update_calibration(self, new_rate: float) -> None:
-        if self._calibration is None:
-            self._calibration = new_rate
-        else:
-            # Exponential moving average weighted toward history
-            self._calibration = round(0.8 * self._calibration + 0.2 * new_rate, 4)
-        self.async_write_ha_state()
+        return self.coordinator.data.get("calibration") if self.coordinator.data else None
