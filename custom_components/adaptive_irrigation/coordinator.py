@@ -62,6 +62,7 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
         self._soil_before: float | None = None
         self._last_duration: int = 0
         self._startup_poll_done: bool = False  # first poll skips watering; entities restore before second
+        self._valve_seen_on: bool = False  # only True after we observe valve==on in this HA session
 
         # Live-tunable values — None means fall back to config
         self._seedling_mode: bool | None = None
@@ -160,14 +161,19 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
             if age_min < min_interval:
                 return {**base, "status": f"Idle — watered {int(age_min)} min ago"}
 
-        # Guard: valve recently run by any source (e.g. existing automations during pilot)
+        # Guard: valve currently on or recently run
+        # Only apply recency check if we saw the valve go ON in this HA session —
+        # avoids false positives from the unavailable→off transition at startup.
         valve_state = self.hass.states.get(self.config[CONF_VALVE_SWITCH])
         if valve_state:
             if valve_state.state == "on":
+                self._valve_seen_on = True
                 return {**base, "status": "Idle — valve currently running"}
-            valve_age_min = (dt_util.utcnow() - valve_state.last_changed).total_seconds() / 60
-            if valve_age_min < min_interval:
-                return {**base, "status": f"Idle — valve ran {int(valve_age_min)} min ago"}
+            if self._valve_seen_on:
+                valve_age_min = (dt_util.utcnow() - valve_state.last_changed).total_seconds() / 60
+                if valve_age_min < min_interval:
+                    return {**base, "status": f"Idle — valve ran {int(valve_age_min)} min ago"}
+                self._valve_seen_on = False  # interval cleared; reset for next cycle
 
         # Motion check
         motion_entity = self.config.get(CONF_MOTION_SENSOR)

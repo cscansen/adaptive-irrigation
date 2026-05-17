@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.5.1] - 2026-05-17
+
+### Fixed
+- False "valve ran X min ago" status on HA restart: Yardian switches publish an `unavailable → off` state transition at startup which updated `last_changed` even though no valve actually ran. Guard now only applies when the valve was observed in the `on` state during the current HA session; a stale `last_changed` from startup is ignored.
+
 ## [0.5.0] - 2026-05-17
 
 ### Added
