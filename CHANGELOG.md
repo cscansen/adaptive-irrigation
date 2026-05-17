@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.6] - 2026-05-17
+
+### Fixed
+- **Last Watered shows unknown on restart** — coordinator now queries the valve switch's recorder history (up to 30 days) on first poll and seeds `last_watered` from the last on→off transition. Existing installs will show real data immediately after the next HA restart instead of "unknown" until the integration itself waters a zone.
+
+### Changed
+- **Irrigation dashboard** — added shared System card (System Active, Water Restriction, Window Start/End, Daily Budget, Daily Used) and Weather card (Weather Source, Rain Forecast, Wind Forecast, ET Today). ET Today, Rain Forecast, and Wind Forecast removed from individual zone cards.
+
 ## [0.6.5] - 2026-05-17
 
 ### Changed

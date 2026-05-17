@@ -194,10 +194,13 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
             return {**base, "status": "Paused — water restriction active"}
 
         # Skip watering decisions on the very first poll — entities haven't restored
-        # last_watered / calibration yet (restore happens after first_refresh completes)
+        # last_watered / calibration yet (restore happens after first_refresh completes).
+        # If last_watered is still None after restore, seed it from valve switch history.
         if not self._startup_poll_done:
             self._startup_poll_done = True
-            return {**base, "status": "Idle"}
+            if self._last_watered is None:
+                await self._init_last_watered_from_history()
+            return {**base, "last_watered": self._last_watered, "status": "Idle"}
 
         # Seedling mode: only evaluate during the 4 daily time windows
         if self._effective_seedling_mode:
@@ -491,6 +494,39 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
 
         self.hass.async_create_task(self._water_zone(fallback, None, f"sensor-free: {reason}"))
         return {**base, "status": f"Watering — {fallback} min"}
+
+    async def _init_last_watered_from_history(self) -> None:
+        """Seed last_watered from valve switch recorder history when no restore state exists."""
+        valve = self.config.get(CONF_VALVE_SWITCH)
+        if not valve:
+            return
+        from homeassistant.components.recorder import get_instance
+        from homeassistant.components.recorder.history import get_significant_states
+
+        start = dt_util.utcnow() - timedelta(days=30)
+        try:
+            states = await get_instance(self.hass).async_add_executor_job(
+                get_significant_states, self.hass, start, None, [valve]
+            )
+        except Exception as err:
+            _LOGGER.debug("%s: valve history query failed: %s", self.zone_name, err)
+            return
+
+        # Walk forward through history; record the last off timestamp that followed an on.
+        saw_on = False
+        last_off_after_on: datetime | None = None
+        for s in states.get(valve, []):
+            if s.state == "on":
+                saw_on = True
+            elif s.state == "off" and saw_on:
+                last_off_after_on = s.last_changed
+                saw_on = False
+
+        if last_off_after_on:
+            self._last_watered = last_off_after_on
+            _LOGGER.debug(
+                "%s: seeded last_watered from valve history: %s", self.zone_name, last_off_after_on
+            )
 
     def _infer_trend_from_peers(self) -> float | None:
         """Average moisture trend from zones that have real soil sensors."""
