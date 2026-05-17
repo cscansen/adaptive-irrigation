@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.9] - 2026-05-17
+
+### Added
+- **Seedling Expires date picker** per zone (`datetime.*_seedling_expires`) — auto-set to 30 days from now when seedling mode is turned on; editable from the dashboard. When the expiry date passes, seedling mode is automatically turned off and a dashboard notification is posted.
+- **Seedling Threshold slider** added to the irrigation dashboard below the Seedling Mode toggle for each zone.
+- **Seedling Expires date picker** added to the irrigation dashboard below the Seedling Threshold slider for each zone.
+
 ## [0.6.8] - 2026-05-17
 
 ### Changed

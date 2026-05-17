@@ -23,7 +23,7 @@ from .coordinator import AdaptiveIrrigationCoordinator
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS_SYSTEM = [Platform.NUMBER, Platform.SELECT, Platform.SENSOR, Platform.SWITCH]
-PLATFORMS_ZONE   = [Platform.NUMBER, Platform.SENSOR, Platform.SWITCH]
+PLATFORMS_ZONE   = [Platform.DATETIME, Platform.NUMBER, Platform.SENSOR, Platform.SWITCH]
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -116,25 +116,30 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 
 def _register_services(hass: HomeAssistant) -> None:
-    if hass.services.has_service(DOMAIN, "water_zone"):
-        return
+    def _find_coordinator(zone_id: str):
+        needle = zone_id.lower().replace(" ", "_")
+        for coord in hass.data.get(DOMAIN, {}).values():
+            if hasattr(coord, "zone_name") and hasattr(coord, "async_refresh"):
+                if coord.zone_name.lower().replace(" ", "_") == needle:
+                    return coord
+        return None
 
     async def handle_water_zone(call):
         zone_id = call.data["zone_id"]
         duration = int(call.data["duration_minutes"])
-        for coord in hass.data.get(DOMAIN, {}).values():
-            if isinstance(coord, AdaptiveIrrigationCoordinator) and coord.zone_name == zone_id:
-                await coord.water_now(duration)
-                return
-        _LOGGER.warning("water_zone: zone '%s' not found", zone_id)
+        coord = _find_coordinator(zone_id)
+        if coord:
+            await coord.water_now(duration)
+        else:
+            _LOGGER.warning("water_zone: zone '%s' not found", zone_id)
 
     async def handle_evaluate_now(call):
         zone_id = call.data["zone_id"]
-        for coord in hass.data.get(DOMAIN, {}).values():
-            if isinstance(coord, AdaptiveIrrigationCoordinator) and coord.zone_name == zone_id:
-                await coord.async_refresh()
-                return
-        _LOGGER.warning("evaluate_now: zone '%s' not found", zone_id)
+        coord = _find_coordinator(zone_id)
+        if coord:
+            await coord.async_refresh()
+        else:
+            _LOGGER.warning("evaluate_now: zone '%s' not found", zone_id)
 
     hass.services.async_register(DOMAIN, "water_zone", handle_water_zone)
     hass.services.async_register(DOMAIN, "evaluate_now", handle_evaluate_now)

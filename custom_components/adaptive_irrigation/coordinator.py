@@ -78,6 +78,7 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
 
         # Live-tunable values — None means fall back to config
         self._seedling_mode: bool | None = None
+        self._seedling_expires: datetime | None = None
         self._live_threshold: float | None = None
         self._live_seedling_threshold: float | None = None
         self._live_water_interval_days: int | None = None
@@ -142,6 +143,9 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
     def set_seedling_mode(self, enabled: bool) -> None:
         self._seedling_mode = enabled
 
+    def set_seedling_expires(self, dt: datetime | None) -> None:
+        self._seedling_expires = dt
+
     def set_seedling_threshold(self, value: float) -> None:
         self._live_seedling_threshold = value
 
@@ -167,6 +171,24 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
         precip = round(float(weather.get("precipitation", 0) or 0), 2) if weather else 0.0
         wind = round(float(weather.get("wind_speed", 0) or 0), 1) if weather else 0.0
 
+        # Auto-set seedling expiry (30 days) when seedling is on but no expiry is configured yet
+        if self._effective_seedling_mode and self._seedling_expires is None:
+            self._seedling_expires = dt_util.utcnow() + timedelta(days=30)
+
+
+        # Auto-expire seedling mode
+        if self._seedling_mode and self._seedling_expires is not None:
+            if dt_util.utcnow() >= self._seedling_expires:
+                self._seedling_mode = False
+                zone_switch = f"switch.adaptive_irrigation_{self.zone_name}_seedling_mode"
+                self.hass.async_create_task(
+                    self.hass.services.async_call("switch", "turn_off", {"entity_id": zone_switch})
+                )
+                self._notify(
+                    f"irrigation_{self.zone_name}_seedling_expired",
+                    f"Seedling mode for {self.zone_name.replace('_', ' ').title()} expired and has been turned off.",
+                )
+
         base = {
             "moisture": moisture,
             "trend": trend,
@@ -175,6 +197,7 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
             "wind": wind,
             "last_watered": self._last_watered,
             "calibration": self._calibration,
+            "seedling_expires": self._seedling_expires,
         }
 
         domain_data = self.hass.data.setdefault(DOMAIN, {})
