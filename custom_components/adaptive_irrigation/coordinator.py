@@ -85,12 +85,21 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
         if not self._auto_enabled:
             return {**base, "status": "Disabled"}
 
-        # Startup / recent-watering guard
+        # Guard: watered recently by us
+        min_interval = self.config.get(CONF_MIN_INTERVAL, DEFAULT_MIN_INTERVAL)
         if self._last_watered:
             age_min = (dt_util.utcnow() - self._last_watered).total_seconds() / 60
-            min_interval = self.config.get(CONF_MIN_INTERVAL, DEFAULT_MIN_INTERVAL)
             if age_min < min_interval:
                 return {**base, "status": f"Idle — watered {int(age_min)} min ago"}
+
+        # Guard: valve recently run by any source (e.g. existing automations during pilot)
+        valve_state = self.hass.states.get(self.config[CONF_VALVE_SWITCH])
+        if valve_state:
+            if valve_state.state == "on":
+                return {**base, "status": "Idle — valve currently running"}
+            valve_age_min = (dt_util.utcnow() - valve_state.last_changed).total_seconds() / 60
+            if valve_age_min < min_interval:
+                return {**base, "status": f"Idle — valve ran {int(valve_age_min)} min ago"}
 
         # Motion check
         motion_entity = self.config.get(CONF_MOTION_SENSOR)

@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.1] - 2026-05-17
+
+### Fixed
+- Double-watering guard now checks the valve switch's own `last_changed` timestamp, catching waterings triggered by any source (e.g. existing automations running in parallel during pilot). Previously only tracked waterings initiated by the integration itself. Also blocks evaluation when the valve is currently ON.
+
 ## [0.2.0] - 2026-05-17
 
 ### Added

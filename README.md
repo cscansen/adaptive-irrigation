@@ -87,6 +87,11 @@ Duration = `(target - current) / calibration_rate`, capped at max_duration. Fall
 
 These sensors (Third Reality) have an effective range of ~83% (dry) to 98–99% (just watered). Thresholds are set relative to this range.
 
-## Rollout
+## Running Alongside Existing Automations
 
-Pilot on one zone alongside existing automations before disabling them. Current automations: `summer_watering_program`, `germination_watering_program`, `drip_garden_watering`.
+The integration is safe to run in parallel with existing automations during a pilot. Two guards prevent double-watering:
+
+1. **Internal guard** — skips if the integration itself watered within `min_interval` minutes
+2. **Valve guard** — checks the valve switch's `last_changed` timestamp; skips if the valve was run by *any* source (including other automations) within `min_interval` minutes; also skips if the valve is currently ON
+
+Recommended pilot sequence: enable east zone, observe for 2 weeks, then expand one zone at a time and disable the corresponding legacy automation actions.
