@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.6.1] - 2026-05-17
+
+### Added
+- **Weather entity config** — first-zone setup now includes a "Weather Source" step where you pick the weather entity (e.g. `weather.home`). Validates the entity exists before allowing you to proceed; shows a clear error if no weather integration is configured. Subsequent zones inherit the selection automatically — you only pick it once.
+- `strings.json` — proper UI labels and error messages for all config/options flow steps
+
+### Fixed
+- OptionsFlow changes were silently ignored: coordinator read `entry.data` but OptionsFlow writes to `entry.options`. Coordinator now merges both (`{**entry.data, **entry.options}`) so reconfiguring a zone actually takes effect on the next poll.
+- Weather entity is now read from `hass.data[DOMAIN]["weather_entity"]` (set at zone load time) rather than hardcoded to `weather.home`.
+- OptionsFlow for the primary zone (the one that set the weather entity) shows the weather field so you can change it later without removing and re-adding the zone.
+
 ## [0.6.0] - 2026-05-17
 
 ### Added

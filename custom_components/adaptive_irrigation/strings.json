@@ -1,0 +1,62 @@
+{
+  "config": {
+    "step": {
+      "system": {
+        "title": "Weather Source",
+        "description": "Select the weather integration that provides rain and temperature forecasts. This applies to all irrigation zones.",
+        "data": {
+          "weather_entity": "Weather entity"
+        }
+      },
+      "zone": {
+        "title": "Zone Configuration",
+        "data": {
+          "zone_name": "Zone name",
+          "zone_type": "Zone type",
+          "valve_switch": "Valve switch",
+          "soil_sensors": "Soil moisture sensors",
+          "motion_sensor": "Motion sensor (optional — skips zone when active)",
+          "soil_threshold": "Soil threshold (%)",
+          "max_duration": "Max watering duration (min)",
+          "fallback_duration": "Fallback duration when no calibration (min)",
+          "crop_coefficient": "Crop type",
+          "sensor_required": "Soil sensor required",
+          "water_interval_days": "Base watering interval (days, sensor-free zones)",
+          "min_interval": "Minimum time between waterings (min)"
+        }
+      }
+    },
+    "error": {
+      "weather_entity_not_found": "Weather entity not found. Make sure a weather integration (e.g. Met.no, OpenWeatherMap) is set up and the entity ID is correct.",
+      "zone_name_required": "Zone name cannot be empty."
+    },
+    "abort": {
+      "already_configured": "This zone is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Zone Options",
+        "data": {
+          "weather_entity": "Weather entity (applies to all zones)",
+          "zone_name": "Zone name",
+          "zone_type": "Zone type",
+          "valve_switch": "Valve switch",
+          "soil_sensors": "Soil moisture sensors",
+          "motion_sensor": "Motion sensor (optional)",
+          "soil_threshold": "Soil threshold (%)",
+          "max_duration": "Max watering duration (min)",
+          "fallback_duration": "Fallback duration (min)",
+          "crop_coefficient": "Crop type",
+          "sensor_required": "Soil sensor required",
+          "water_interval_days": "Base watering interval (days)",
+          "min_interval": "Minimum time between waterings (min)"
+        }
+      }
+    },
+    "error": {
+      "weather_entity_not_found": "Weather entity not found — check your weather integration."
+    }
+  }
+}

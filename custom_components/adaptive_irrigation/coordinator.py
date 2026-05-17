@@ -22,6 +22,7 @@ from .const import (
     CONF_SOIL_THRESHOLD,
     CONF_VALVE_SWITCH,
     CONF_WATER_INTERVAL_DAYS,
+    CONF_WEATHER_ENTITY,
     CONF_ZONE_TYPE,
     DEFAULT_CROP_COEFFICIENT,
     DEFAULT_FALLBACK_DURATION,
@@ -29,6 +30,7 @@ from .const import (
     DEFAULT_MIN_INTERVAL,
     DEFAULT_SOIL_THRESHOLD,
     DEFAULT_WATER_INTERVAL_DAYS,
+    DEFAULT_WEATHER_ENTITY,
     DEFAULT_ZONE_TYPE,
     DOMAIN,
     PEER_TREND_DRYING_THRESHOLD,
@@ -53,7 +55,8 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
         )
         self.entry = entry
         self.zone_name = entry.data["zone_name"]
-        self.config = entry.data
+        # Merge options over data so OptionsFlow changes take effect on reload
+        self.config = {**entry.data, **entry.options}
 
         self._auto_enabled: bool = True
         self._last_watered: datetime | None = None
@@ -291,18 +294,19 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
     # --- Weather + ET ---
 
     async def _fetch_weather(self) -> dict | None:
+        weather_entity = self.hass.data.get(DOMAIN, {}).get("weather_entity", DEFAULT_WEATHER_ENTITY)
         try:
             result = await self.hass.services.async_call(
                 "weather",
                 "get_forecasts",
-                {"entity_id": "weather.home", "type": "daily"},
+                {"entity_id": weather_entity, "type": "daily"},
                 blocking=True,
                 return_response=True,
             )
-            forecasts = (result or {}).get("weather.home", {}).get("forecast", [])
+            forecasts = (result or {}).get(weather_entity, {}).get("forecast", [])
             return forecasts[0] if forecasts else None
         except Exception as err:
-            _LOGGER.debug("%s: weather unavailable: %s", self.zone_name, err)
+            _LOGGER.debug("%s: weather unavailable (%s): %s", self.zone_name, weather_entity, err)
             return None
 
     def _compute_et(self, forecast: dict) -> float | None:

@@ -1,5 +1,8 @@
 DOMAIN = "adaptive_irrigation"
 
+CONF_WEATHER_ENTITY = "weather_entity"
+DEFAULT_WEATHER_ENTITY = "weather.home"
+
 CONF_ZONE_NAME = "zone_name"
 CONF_ZONE_TYPE = "zone_type"
 CONF_VALVE_SWITCH = "valve_switch"
