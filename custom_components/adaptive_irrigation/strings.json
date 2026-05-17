@@ -22,7 +22,9 @@
           "crop_coefficient": "Crop type",
           "sensor_required": "Soil sensor required",
           "water_interval_days": "Base watering interval (days, sensor-free zones)",
-          "min_interval": "Minimum time between waterings (min)"
+          "min_interval": "Minimum time between waterings (min)",
+          "window_start_hour": "Watering window start (hour, 0–23)",
+          "window_end_hour": "Watering window end (hour, 1–23)"
         }
       }
     },
@@ -51,7 +53,9 @@
           "crop_coefficient": "Crop type",
           "sensor_required": "Soil sensor required",
           "water_interval_days": "Base watering interval (days)",
-          "min_interval": "Minimum time between waterings (min)"
+          "min_interval": "Minimum time between waterings (min)",
+          "window_start_hour": "Watering window start (hour, 0–23)",
+          "window_end_hour": "Watering window end (hour, 1–23)"
         }
       }
     },

@@ -11,9 +11,13 @@ from .const import (
     CONF_MAX_DURATION,
     CONF_SOIL_THRESHOLD,
     CONF_WATER_INTERVAL_DAYS,
+    CONF_WINDOW_END_HOUR,
+    CONF_WINDOW_START_HOUR,
     DEFAULT_MAX_DURATION,
     DEFAULT_SOIL_THRESHOLD,
     DEFAULT_WATER_INTERVAL_DAYS,
+    DEFAULT_WINDOW_END_HOUR,
+    DEFAULT_WINDOW_START_HOUR,
     DOMAIN,
 )
 from .coordinator import AdaptiveIrrigationCoordinator
@@ -29,6 +33,8 @@ async def async_setup_entry(
         SoilThresholdNumber(coordinator),
         WaterIntervalNumber(coordinator),
         MaxDurationNumber(coordinator),
+        WindowStartHourNumber(coordinator),
+        WindowEndHourNumber(coordinator),
     ])
 
 
@@ -120,3 +126,25 @@ class MaxDurationNumber(_ZoneNumber):
 
     def _push_to_coordinator(self) -> None:
         self.coordinator.set_live_max_duration(int(self._current_value))
+
+
+class WindowStartHourNumber(_ZoneNumber):
+    _attr_icon = "mdi:clock-start"
+
+    def __init__(self, coordinator: AdaptiveIrrigationCoordinator) -> None:
+        default = coordinator.config.get(CONF_WINDOW_START_HOUR, DEFAULT_WINDOW_START_HOUR)
+        super().__init__(coordinator, "window_start_hour", "Watering Window Start", "hr", 0.0, 23.0, 1.0, default)
+
+    def _push_to_coordinator(self) -> None:
+        self.coordinator.set_live_window_start_hour(int(self._current_value))
+
+
+class WindowEndHourNumber(_ZoneNumber):
+    _attr_icon = "mdi:clock-end"
+
+    def __init__(self, coordinator: AdaptiveIrrigationCoordinator) -> None:
+        default = coordinator.config.get(CONF_WINDOW_END_HOUR, DEFAULT_WINDOW_END_HOUR)
+        super().__init__(coordinator, "window_end_hour", "Watering Window End", "hr", 1.0, 23.0, 1.0, default)
+
+    def _push_to_coordinator(self) -> None:
+        self.coordinator.set_live_window_end_hour(int(self._current_value))

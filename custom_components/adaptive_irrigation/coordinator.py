@@ -23,6 +23,8 @@ from .const import (
     CONF_VALVE_SWITCH,
     CONF_WATER_INTERVAL_DAYS,
     CONF_WEATHER_ENTITY,
+    CONF_WINDOW_END_HOUR,
+    CONF_WINDOW_START_HOUR,
     CONF_ZONE_TYPE,
     DEFAULT_CROP_COEFFICIENT,
     DEFAULT_FALLBACK_DURATION,
@@ -31,6 +33,8 @@ from .const import (
     DEFAULT_SOIL_THRESHOLD,
     DEFAULT_WATER_INTERVAL_DAYS,
     DEFAULT_WEATHER_ENTITY,
+    DEFAULT_WINDOW_END_HOUR,
+    DEFAULT_WINDOW_START_HOUR,
     DEFAULT_ZONE_TYPE,
     DOMAIN,
     PEER_TREND_DRYING_THRESHOLD,
@@ -72,6 +76,8 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
         self._live_threshold: float | None = None
         self._live_water_interval_days: int | None = None
         self._live_max_duration: int | None = None
+        self._live_window_start_hour: int | None = None
+        self._live_window_end_hour: int | None = None
 
     # --- Effective-value properties (live entity overrides config) ---
 
@@ -99,6 +105,18 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
             return self._live_max_duration
         return int(self.config.get(CONF_MAX_DURATION, DEFAULT_MAX_DURATION))
 
+    @property
+    def _effective_window_start_hour(self) -> int:
+        if self._live_window_start_hour is not None:
+            return self._live_window_start_hour
+        return int(self.config.get(CONF_WINDOW_START_HOUR, DEFAULT_WINDOW_START_HOUR))
+
+    @property
+    def _effective_window_end_hour(self) -> int:
+        if self._live_window_end_hour is not None:
+            return self._live_window_end_hour
+        return int(self.config.get(CONF_WINDOW_END_HOUR, DEFAULT_WINDOW_END_HOUR))
+
     # --- Entity callbacks (called after restore) ---
 
     def set_auto_enabled(self, enabled: bool) -> None:
@@ -121,6 +139,12 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
 
     def set_live_max_duration(self, value: int) -> None:
         self._live_max_duration = value
+
+    def set_live_window_start_hour(self, value: int) -> None:
+        self._live_window_start_hour = value
+
+    def set_live_window_end_hour(self, value: int) -> None:
+        self._live_window_end_hour = value
 
     # --- Main poll ---
 
@@ -160,6 +184,13 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
                 now = dt_util.now()
                 next_window = self._next_seedling_window(now)
                 return {**base, "status": f"Idle — next seedling window at {next_window}"}
+        else:
+            # Summer mode: enforce configurable watering window
+            current_hour = dt_util.now().hour
+            start = self._effective_window_start_hour
+            end = self._effective_window_end_hour
+            if not (start <= current_hour < end):
+                return {**base, "status": f"Idle — outside watering window ({start:02d}:00–{end:02d}:00)"}
 
         # Guard: watered recently by us
         min_interval = self.config.get(CONF_MIN_INTERVAL, DEFAULT_MIN_INTERVAL)

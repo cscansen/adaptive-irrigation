@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.2] - 2026-05-17
+
+### Added
+- **Per-zone watering window** — two new number entities per zone: `Watering Window Start` (default 5am) and `Watering Window End` (default 10am). Summer mode polls are gated to this window; outside it the status reads `Idle — outside watering window (05:00–10:00)`. Seedling mode is unaffected (it uses its own 4-window schedule). Adjustable per zone from the dashboard without touching config.
+
+### Fixed
+- **Sensor staleness threshold** raised from 4 h → 8 h (`STALE_SENSOR_HOURS`). Sensors that last reported at ~11 pm were being treated as stale at 5:30 am and triggering unnecessary fallback waterings.
+
 ## [0.6.1] - 2026-05-17
 
 ### Added
