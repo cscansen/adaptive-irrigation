@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.8] - 2026-05-17
+
+### Changed
+- **Seedling mode simplified** — seedling mode no longer gates watering to 4 fixed daily windows. All zones (seedling or not) now use the same configurable watering window. When seedling mode is on, the zone uses the **Seedling Threshold** slider instead of the normal threshold, keeping soil wetter for germination.
+- **Seedling Threshold slider** added per zone (`number.*_seedling_threshold`) — the moisture % below which a seedling-mode zone waters. Range 10–99%, default 35%.
+- **Soil Threshold slider minimum** lowered from 60% to 10% to match actual sensor range.
+- **Default thresholds updated** — normal: 92% → 25%, seedling: 93% → 35%, reflecting accurate sensor calibration.
+
 ## [0.6.7] - 2026-05-17
 
 ### Fixed

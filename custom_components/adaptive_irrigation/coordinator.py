@@ -43,7 +43,7 @@ from .const import (
     DOMAIN,
     PEER_TREND_DRYING_THRESHOLD,
     SCAN_INTERVAL_MINUTES,
-    SEEDLING_WINDOWS,
+    SEEDLING_DEFAULT_THRESHOLD,
     STALE_SENSOR_HOURS,
     TREND_HOURS,
     ZONE_TYPE_SEEDLING,
@@ -79,6 +79,7 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
         # Live-tunable values — None means fall back to config
         self._seedling_mode: bool | None = None
         self._live_threshold: float | None = None
+        self._live_seedling_threshold: float | None = None
         self._live_water_interval_days: int | None = None
         self._live_max_duration: int | None = None
         self._live_flow_rate: float | None = None
@@ -93,6 +94,10 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
 
     @property
     def _effective_threshold(self) -> float:
+        if self._effective_seedling_mode:
+            if self._live_seedling_threshold is not None:
+                return self._live_seedling_threshold
+            return float(SEEDLING_DEFAULT_THRESHOLD)
         if self._live_threshold is not None:
             return self._live_threshold
         return float(self.config.get(CONF_SOIL_THRESHOLD, DEFAULT_SOIL_THRESHOLD))
@@ -136,6 +141,9 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
 
     def set_seedling_mode(self, enabled: bool) -> None:
         self._seedling_mode = enabled
+
+    def set_seedling_threshold(self, value: float) -> None:
+        self._live_seedling_threshold = value
 
     def set_live_threshold(self, value: float) -> None:
         self._live_threshold = value
@@ -206,19 +214,12 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
                 self._last_moisture = moisture
             return {**base, "moisture": moisture, "last_watered": self._last_watered, "status": "Idle"}
 
-        # Seedling mode: only evaluate during the 4 daily time windows
-        if self._effective_seedling_mode:
-            if not self._in_seedling_window():
-                now = dt_util.now()
-                next_window = self._next_seedling_window(now)
-                return {**base, "status": f"Idle — next seedling window at {next_window}"}
-        else:
-            # Summer mode: enforce configurable watering window
-            current_hour = dt_util.now().hour
-            start = self._effective_window_start_hour
-            end = self._effective_window_end_hour
-            if not (start <= current_hour < end):
-                return {**base, "status": f"Idle — outside watering window ({start:02d}:00–{end:02d}:00)"}
+        # Enforce configurable watering window (applies to all zones, seedling or not)
+        current_hour = dt_util.now().hour
+        start = self._effective_window_start_hour
+        end = self._effective_window_end_hour
+        if not (start <= current_hour < end):
+            return {**base, "status": f"Idle — outside watering window ({start:02d}:00–{end:02d}:00)"}
 
         # Guard: watered recently by us
         min_interval = self.config.get(CONF_MIN_INTERVAL, DEFAULT_MIN_INTERVAL)
@@ -573,22 +574,6 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
             if coord.data and coord.data.get("trend") is not None:
                 trends.append(coord.data["trend"])
         return round(sum(trends) / len(trends), 3) if trends else None
-
-    # --- Seedling window helpers ---
-
-    def _in_seedling_window(self) -> bool:
-        now = dt_util.now()
-        total_min = now.hour * 60 + now.minute
-        return any(start <= total_min < end for start, end in SEEDLING_WINDOWS)
-
-    def _next_seedling_window(self, now) -> str:
-        total_min = now.hour * 60 + now.minute
-        for start, _ in SEEDLING_WINDOWS:
-            if start > total_min:
-                return f"{start // 60:02d}:{start % 60:02d}"
-        # All windows passed today — first window tomorrow
-        start = SEEDLING_WINDOWS[0][0]
-        return f"{start // 60:02d}:{start % 60:02d} (tomorrow)"
 
     # --- Notification helper ---
 

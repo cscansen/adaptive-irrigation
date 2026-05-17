@@ -20,6 +20,7 @@ from .const import (
     DEFAULT_WATER_INTERVAL_DAYS,
     DOMAIN,
     ENTRY_TYPE_SYSTEM,
+    SEEDLING_DEFAULT_THRESHOLD,
 )
 from .coordinator import AdaptiveIrrigationCoordinator
 
@@ -39,6 +40,7 @@ async def async_setup_entry(
     coordinator: AdaptiveIrrigationCoordinator = domain_data[entry.entry_id]
     entities: list[NumberEntity] = [
         SoilThresholdNumber(coordinator),
+        SeedlingThresholdNumber(coordinator),
         WaterIntervalNumber(coordinator),
         MaxDurationNumber(coordinator),
         FlowRateNumber(coordinator),
@@ -112,10 +114,20 @@ class SoilThresholdNumber(_ZoneNumber):
 
     def __init__(self, coordinator: AdaptiveIrrigationCoordinator) -> None:
         default = coordinator.config.get(CONF_SOIL_THRESHOLD, DEFAULT_SOIL_THRESHOLD)
-        super().__init__(coordinator, "soil_threshold", "Soil Threshold", "%", 60.0, 99.0, 1.0, default)
+        super().__init__(coordinator, "soil_threshold", "Soil Threshold", "%", 10.0, 99.0, 1.0, default)
 
     def _push_to_coordinator(self) -> None:
         self.coordinator.set_live_threshold(self._current_value)
+
+
+class SeedlingThresholdNumber(_ZoneNumber):
+    _attr_icon = "mdi:sprout"
+
+    def __init__(self, coordinator: AdaptiveIrrigationCoordinator) -> None:
+        super().__init__(coordinator, "seedling_threshold", "Seedling Threshold", "%", 10.0, 99.0, 1.0, SEEDLING_DEFAULT_THRESHOLD)
+
+    def _push_to_coordinator(self) -> None:
+        self.coordinator.set_seedling_threshold(self._current_value)
 
 
 class WaterIntervalNumber(_ZoneNumber):
