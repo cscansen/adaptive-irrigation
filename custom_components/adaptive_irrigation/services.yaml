@@ -1,0 +1,30 @@
+water_zone:
+  name: Water Zone
+  description: Manually water a zone for a specified duration.
+  fields:
+    zone_id:
+      name: Zone ID
+      description: The zone name as configured (e.g. "east").
+      required: true
+      selector:
+        text:
+    duration_minutes:
+      name: Duration (minutes)
+      description: How long to water.
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 60
+          unit_of_measurement: min
+
+evaluate_now:
+  name: Evaluate Now
+  description: Force an immediate watering evaluation for a zone.
+  fields:
+    zone_id:
+      name: Zone ID
+      description: The zone name as configured.
+      required: true
+      selector:
+        text:

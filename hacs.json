@@ -1,0 +1,5 @@
+{
+  "name": "Adaptive Irrigation",
+  "content_type": "integration",
+  "config_flow": true
+}

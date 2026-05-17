@@ -1,0 +1,30 @@
+DOMAIN = "adaptive_irrigation"
+
+CONF_ZONE_NAME = "zone_name"
+CONF_VALVE_SWITCH = "valve_switch"
+CONF_SOIL_SENSORS = "soil_sensors"
+CONF_MOTION_SENSOR = "motion_sensor"
+CONF_SOIL_THRESHOLD = "soil_threshold"
+CONF_MAX_DURATION = "max_duration"
+CONF_FALLBACK_DURATION = "fallback_duration"
+CONF_CROP_COEFFICIENT = "crop_coefficient"
+CONF_SENSOR_REQUIRED = "sensor_required"
+CONF_MIN_INTERVAL = "min_interval"
+
+DEFAULT_SOIL_THRESHOLD = 92
+DEFAULT_MAX_DURATION = 20
+DEFAULT_FALLBACK_DURATION = 6
+DEFAULT_MIN_INTERVAL = 45
+DEFAULT_CROP_COEFFICIENT = "0.8"
+
+CROP_COEFFICIENTS = {
+    "lawn": 0.8,
+    "mixed": 0.9,
+    "garden": 1.0,
+    "drip": 0.6,
+}
+
+SCAN_INTERVAL_MINUTES = 15
+TREND_HOURS = 6
+CALIBRATION_FOLLOWUP_SECONDS = 1800
+STALE_SENSOR_HOURS = 4
