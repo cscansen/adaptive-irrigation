@@ -98,9 +98,18 @@ Duration = `(target - current) / calibration_rate`, capped at max_duration. Fall
 
 Duration = `fallback_duration` (fixed; no calibration without a sensor).
 
-## Soil Sensor Notes
+## Setting Thresholds
 
-These sensors (Third Reality) have an effective range of ~83% (dry) to 98–99% (just watered). Thresholds are set relative to this range.
+The right threshold depends entirely on what you're growing, not just the sensor's output range. Some starting points:
+
+| Situation | Suggested threshold |
+|-----------|-------------------|
+| Baby grass / germination | 93–95% — seeds need to stay consistently wet |
+| Established lawn | 88–92% — some drying between cycles is fine |
+| Shrubs / trees (drip) | 75–85% — deeper roots tolerate more variation |
+| Vegetable garden | 90–93% — depends on crop and growth stage |
+
+If the zone is skipping when the soil feels dry, raise the threshold. If it's watering too frequently, lower it. The calibration sensor shows how much each minute of watering actually moves the needle, which helps set max and fallback durations.
 
 ## Running Alongside Existing Automations
 
