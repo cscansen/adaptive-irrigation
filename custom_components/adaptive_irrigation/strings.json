@@ -5,7 +5,9 @@
         "title": "Weather Source",
         "description": "Select the weather integration that provides rain and temperature forecasts. This applies to all irrigation zones.",
         "data": {
-          "weather_entity": "Weather entity"
+          "weather_entity": "Weather entity",
+          "water_meter_entity": "Water meter sensor (optional — e.g. Flume)",
+          "daily_budget_gallons": "Daily water budget (gal, 0 = unlimited)"
         }
       },
       "zone": {
@@ -24,7 +26,8 @@
           "water_interval_days": "Base watering interval (days, sensor-free zones)",
           "min_interval": "Minimum time between waterings (min)",
           "window_start_hour": "Watering window start (hour, 0–23)",
-          "window_end_hour": "Watering window end (hour, 1–23)"
+          "window_end_hour": "Watering window end (hour, 1–23)",
+          "flow_rate_gpm": "Flow rate (gal/min)"
         }
       }
     },
@@ -42,6 +45,8 @@
         "title": "Zone Options",
         "data": {
           "weather_entity": "Weather entity (applies to all zones)",
+          "water_meter_entity": "Water meter sensor (optional — e.g. Flume)",
+          "daily_budget_gallons": "Daily water budget (gal, 0 = unlimited)",
           "zone_name": "Zone name",
           "zone_type": "Zone type",
           "valve_switch": "Valve switch",
@@ -55,7 +60,8 @@
           "water_interval_days": "Base watering interval (days)",
           "min_interval": "Minimum time between waterings (min)",
           "window_start_hour": "Watering window start (hour, 0–23)",
-          "window_end_hour": "Watering window end (hour, 1–23)"
+          "window_end_hour": "Watering window end (hour, 1–23)",
+          "flow_rate_gpm": "Flow rate (gal/min)"
         }
       }
     },

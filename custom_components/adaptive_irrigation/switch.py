@@ -24,6 +24,7 @@ async def async_setup_entry(
     if not hass.data[DOMAIN].get("master_switch_added"):
         hass.data[DOMAIN]["master_switch_added"] = True
         entities.append(AdaptiveIrrigationMasterSwitch())
+        entities.append(WaterRestrictionSwitch())
     async_add_entities(entities)
 
 
@@ -120,7 +121,7 @@ class AdaptiveIrrigationMasterSwitch(RestoreEntity, SwitchEntity):
 
     _attr_icon = "mdi:water-pump"
     _attr_unique_id = "adaptive_irrigation_master"
-    _attr_name = "Adaptive Irrigation"
+    _attr_name = "System Active"
     _attr_has_entity_name = False
 
     def __init__(self) -> None:
@@ -153,4 +154,45 @@ class AdaptiveIrrigationMasterSwitch(RestoreEntity, SwitchEntity):
     async def async_turn_off(self, **kwargs) -> None:
         self._is_on = False
         self.hass.data[DOMAIN]["master_enabled"] = False
+        self.async_write_ha_state()
+
+
+class WaterRestrictionSwitch(RestoreEntity, SwitchEntity):
+    """Global water restriction — when on, all zones are blocked from watering."""
+
+    _attr_icon = "mdi:water-off"
+    _attr_unique_id = "adaptive_irrigation_water_restriction"
+    _attr_name = "Water Restriction"
+    _attr_has_entity_name = False
+
+    def __init__(self) -> None:
+        self._is_on = False
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, "system")},
+            "name": "Adaptive Irrigation",
+            "manufacturer": "adaptive_irrigation",
+        }
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_state()
+        if last is not None:
+            self._is_on = last.state == "on"
+        self.hass.data[DOMAIN]["water_restriction"] = self._is_on
+
+    @property
+    def is_on(self) -> bool:
+        return self._is_on
+
+    async def async_turn_on(self, **kwargs) -> None:
+        self._is_on = True
+        self.hass.data[DOMAIN]["water_restriction"] = True
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs) -> None:
+        self._is_on = False
+        self.hass.data[DOMAIN]["water_restriction"] = False
         self.async_write_ha_state()

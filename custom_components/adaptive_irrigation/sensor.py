@@ -24,7 +24,7 @@ async def async_setup_entry(
 ) -> None:
     coordinator: AdaptiveIrrigationCoordinator = hass.data[DOMAIN][entry.entry_id]
     zone = coordinator.zone_name
-    async_add_entities([
+    entities = [
         MoistureSensor(coordinator, zone),
         TrendSensor(coordinator, zone),
         ETSensor(coordinator, zone),
@@ -33,7 +33,11 @@ async def async_setup_entry(
         StatusSensor(coordinator, zone),
         LastWateredSensor(coordinator, zone),
         CalibrationSensor(coordinator, zone),
-    ])
+    ]
+    if not hass.data[DOMAIN].get("system_sensor_added"):
+        hass.data[DOMAIN]["system_sensor_added"] = True
+        entities.append(DailyUsedSensor(hass))
+    async_add_entities(entities)
 
 
 class _ZoneBase(CoordinatorEntity[AdaptiveIrrigationCoordinator]):
@@ -176,3 +180,40 @@ class CalibrationSensor(_ZoneBase, RestoreEntity, SensorEntity):
     @property
     def native_value(self) -> float | None:
         return self.coordinator.data.get("calibration") if self.coordinator.data else None
+
+
+class DailyUsedSensor(SensorEntity):
+    """System-level daily water usage — reads from Flume meter delta or accumulated estimate."""
+
+    _attr_unique_id = "adaptive_irrigation_daily_used"
+    _attr_name = "Daily Water Used"
+    _attr_native_unit_of_measurement = "gal"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:water-pump"
+    _attr_has_entity_name = False
+
+    def __init__(self, hass) -> None:
+        self._hass = hass
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, "system")},
+            "name": "Adaptive Irrigation",
+            "manufacturer": "adaptive_irrigation",
+        }
+
+    @property
+    def native_value(self) -> float:
+        domain_data = self._hass.data.get(DOMAIN, {})
+        meter_entity = domain_data.get("water_meter_entity")
+        if meter_entity:
+            state = self._hass.states.get(meter_entity)
+            if state and state.state not in ("unknown", "unavailable"):
+                try:
+                    current = float(state.state)
+                    baseline = domain_data.get("water_meter_baseline", current)
+                    return round(max(0.0, current - baseline), 1)
+                except ValueError:
+                    pass
+        return round(domain_data.get("daily_used_gallons", 0.0), 1)

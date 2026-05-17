@@ -4,7 +4,9 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_WEATHER_ENTITY, DOMAIN
+from homeassistant.util import dt as dt_util
+
+from .const import CONF_DAILY_BUDGET_GALLONS, CONF_WATER_METER_ENTITY, CONF_WEATHER_ENTITY, DOMAIN
 from .coordinator import AdaptiveIrrigationCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -21,6 +23,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     weather = entry.data.get(CONF_WEATHER_ENTITY) or entry.options.get(CONF_WEATHER_ENTITY)
     if weather:
         domain_data["weather_entity"] = weather
+
+    # Propagate global water budget settings from primary zone entry
+    water_meter = entry.data.get(CONF_WATER_METER_ENTITY) or entry.options.get(CONF_WATER_METER_ENTITY)
+    if water_meter:
+        domain_data["water_meter_entity"] = water_meter
+    budget = entry.data.get(CONF_DAILY_BUDGET_GALLONS) or entry.options.get(CONF_DAILY_BUDGET_GALLONS)
+    if budget is not None:
+        domain_data.setdefault("daily_budget_gallons", float(budget))
+    domain_data.setdefault("daily_used_gallons", 0.0)
+    domain_data.setdefault("budget_date", dt_util.now().date().isoformat())
+    domain_data.setdefault("water_restriction", False)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
     _register_services(hass)

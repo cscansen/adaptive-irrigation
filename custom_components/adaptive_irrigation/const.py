@@ -17,6 +17,9 @@ CONF_MIN_INTERVAL = "min_interval"
 CONF_WATER_INTERVAL_DAYS = "water_interval_days"
 CONF_WINDOW_START_HOUR = "window_start_hour"
 CONF_WINDOW_END_HOUR = "window_end_hour"
+CONF_WATER_METER_ENTITY = "water_meter_entity"
+CONF_DAILY_BUDGET_GALLONS = "daily_budget_gallons"
+CONF_FLOW_RATE_GPM = "flow_rate_gpm"
 
 ZONE_TYPE_SUMMER = "summer"
 ZONE_TYPE_SEEDLING = "seedling"
@@ -30,6 +33,8 @@ SEEDLING_DEFAULT_FALLBACK = 4
 DEFAULT_WATER_INTERVAL_DAYS = 3
 DEFAULT_WINDOW_START_HOUR = 5
 DEFAULT_WINDOW_END_HOUR = 10
+DEFAULT_FLOW_RATE_GPM = 2.0
+DEFAULT_DAILY_BUDGET_GALLONS = 0.0
 PEER_TREND_DRYING_THRESHOLD = -0.3  # %/hr — peers drying this fast triggers early watering
 
 DEFAULT_SOIL_THRESHOLD = 92

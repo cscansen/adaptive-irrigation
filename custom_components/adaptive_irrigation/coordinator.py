@@ -21,13 +21,17 @@ from .const import (
     CONF_SOIL_SENSORS,
     CONF_SOIL_THRESHOLD,
     CONF_VALVE_SWITCH,
+    CONF_DAILY_BUDGET_GALLONS,
+    CONF_FLOW_RATE_GPM,
     CONF_WATER_INTERVAL_DAYS,
     CONF_WEATHER_ENTITY,
     CONF_WINDOW_END_HOUR,
     CONF_WINDOW_START_HOUR,
     CONF_ZONE_TYPE,
     DEFAULT_CROP_COEFFICIENT,
+    DEFAULT_DAILY_BUDGET_GALLONS,
     DEFAULT_FALLBACK_DURATION,
+    DEFAULT_FLOW_RATE_GPM,
     DEFAULT_MAX_DURATION,
     DEFAULT_MIN_INTERVAL,
     DEFAULT_SOIL_THRESHOLD,
@@ -78,6 +82,7 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
         self._live_max_duration: int | None = None
         self._live_window_start_hour: int | None = None
         self._live_window_end_hour: int | None = None
+        self._live_flow_rate: float | None = None
 
     # --- Effective-value properties (live entity overrides config) ---
 
@@ -117,6 +122,12 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
             return self._live_window_end_hour
         return int(self.config.get(CONF_WINDOW_END_HOUR, DEFAULT_WINDOW_END_HOUR))
 
+    @property
+    def _effective_flow_rate(self) -> float:
+        if self._live_flow_rate is not None:
+            return self._live_flow_rate
+        return float(self.config.get(CONF_FLOW_RATE_GPM, DEFAULT_FLOW_RATE_GPM))
+
     # --- Entity callbacks (called after restore) ---
 
     def set_auto_enabled(self, enabled: bool) -> None:
@@ -146,6 +157,9 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
     def set_live_window_end_hour(self, value: int) -> None:
         self._live_window_end_hour = value
 
+    def set_live_flow_rate(self, value: float) -> None:
+        self._live_flow_rate = value
+
     # --- Main poll ---
 
     async def _async_update_data(self) -> dict:
@@ -166,11 +180,30 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
             "calibration": self._calibration,
         }
 
+        domain_data = self.hass.data.setdefault(DOMAIN, {})
+
+        # Midnight budget reset
+        today = dt_util.now().date().isoformat()
+        if domain_data.get("budget_date") != today:
+            domain_data["budget_date"] = today
+            domain_data["daily_used_gallons"] = 0.0
+            meter = domain_data.get("water_meter_entity")
+            if meter:
+                s = self.hass.states.get(meter)
+                if s and s.state not in ("unknown", "unavailable"):
+                    try:
+                        domain_data["water_meter_baseline"] = float(s.state)
+                    except ValueError:
+                        pass
+
         if not self._auto_enabled:
             return {**base, "status": "Disabled"}
 
-        if not self.hass.data.get(DOMAIN, {}).get("master_enabled", True):
+        if not domain_data.get("master_enabled", True):
             return {**base, "status": "Disabled — master switch off"}
+
+        if domain_data.get("water_restriction", False):
+            return {**base, "status": "Paused — water restriction active"}
 
         # Skip watering decisions on the very first poll — entities haven't restored
         # last_watered / calibration yet (restore happens after first_refresh completes)
@@ -242,6 +275,18 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
             duration = calibrated_duration(
                 moisture or 0, threshold + 5, self._calibration, fallback, max_dur
             )
+            budget = domain_data.get("daily_budget_gallons", DEFAULT_DAILY_BUDGET_GALLONS)
+            if budget > 0.0:
+                flow = self._effective_flow_rate
+                used = domain_data.get("daily_used_gallons", 0.0)
+                remaining_gal = budget - used
+                if remaining_gal <= 0:
+                    msg = f"Daily water budget exhausted ({used:.0f}/{budget:.0f} gal used)."
+                    self._notify(f"irrigation_{self.zone_name}_session", msg)
+                    return {**base, "status": f"Skipped — budget exhausted ({used:.0f}/{budget:.0f} gal)"}
+                remaining_min = remaining_gal / flow
+                if duration > remaining_min:
+                    duration = max(1, int(remaining_min))
             self.hass.async_create_task(self._water_zone(duration, moisture, decision))
             trend_note = f", trend {trend:+.2f}%/h" if trend is not None else ""
             m_note = f" (soil {moisture:.0f}%{trend_note})" if moisture is not None else ""
@@ -291,6 +336,12 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
                     f"Watering {zone_label} for {duration_min} min.{soil_msg}",
                 )
                 await asyncio.sleep(duration_min * 60)
+                # Accumulate usage estimate when no real meter is configured
+                d = self.hass.data.setdefault(DOMAIN, {})
+                if not d.get("water_meter_entity"):
+                    d["daily_used_gallons"] = (
+                        d.get("daily_used_gallons", 0.0) + duration_min * self._effective_flow_rate
+                    )
             finally:
                 await self.hass.services.async_call(
                     "switch", "turn_off", {"entity_id": valve}, blocking=True

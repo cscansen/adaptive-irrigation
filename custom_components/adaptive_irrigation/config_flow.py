@@ -6,6 +6,7 @@ from homeassistant.helpers import selector
 
 from .const import (
     CONF_CROP_COEFFICIENT,
+    CONF_DAILY_BUDGET_GALLONS,
     CONF_FALLBACK_DURATION,
     CONF_MAX_DURATION,
     CONF_MIN_INTERVAL,
@@ -15,10 +16,12 @@ from .const import (
     CONF_SOIL_THRESHOLD,
     CONF_VALVE_SWITCH,
     CONF_WATER_INTERVAL_DAYS,
+    CONF_WATER_METER_ENTITY,
     CONF_WEATHER_ENTITY,
     CONF_ZONE_NAME,
     CONF_ZONE_TYPE,
     DEFAULT_CROP_COEFFICIENT,
+    DEFAULT_DAILY_BUDGET_GALLONS,
     DEFAULT_FALLBACK_DURATION,
     DEFAULT_MAX_DURATION,
     DEFAULT_MIN_INTERVAL,
@@ -98,6 +101,7 @@ class AdaptiveIrrigationConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     def __init__(self) -> None:
         self._weather_entity: str = DEFAULT_WEATHER_ENTITY
+        self._system_input: dict = {}
 
     async def async_step_user(self, user_input=None):
         existing = self.hass.config_entries.async_entries(DOMAIN)
@@ -120,6 +124,7 @@ class AdaptiveIrrigationConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors[CONF_WEATHER_ENTITY] = "weather_entity_not_found"
             else:
                 self._weather_entity = weather
+                self._system_input = user_input
                 return await self.async_step_zone()
 
         return self.async_show_form(
@@ -127,6 +132,12 @@ class AdaptiveIrrigationConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema({
                 vol.Required(CONF_WEATHER_ENTITY, default=self._weather_entity): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="weather")
+                ),
+                vol.Optional(CONF_WATER_METER_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Optional(CONF_DAILY_BUDGET_GALLONS, default=DEFAULT_DAILY_BUDGET_GALLONS): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=0, max=5000, step=10, unit_of_measurement="gal")
                 ),
             }),
             errors=errors,
@@ -141,11 +152,15 @@ class AdaptiveIrrigationConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 await self.async_set_unique_id(f"{DOMAIN}_{zone}")
                 self._abort_if_unique_id_configured()
-                # Store weather entity only on entries that set it (i.e. the first zone)
+                # Store weather entity + global settings only on the first zone entry
                 existing = self.hass.config_entries.async_entries(DOMAIN)
                 data = dict(user_input)
                 if not existing:
                     data[CONF_WEATHER_ENTITY] = self._weather_entity
+                    if CONF_WATER_METER_ENTITY in self._system_input:
+                        data[CONF_WATER_METER_ENTITY] = self._system_input[CONF_WATER_METER_ENTITY]
+                    if CONF_DAILY_BUDGET_GALLONS in self._system_input:
+                        data[CONF_DAILY_BUDGET_GALLONS] = self._system_input[CONF_DAILY_BUDGET_GALLONS]
                 return self.async_create_entry(title=zone, data=data)
 
         return self.async_show_form(
@@ -174,7 +189,14 @@ class AdaptiveIrrigationOptionsFlow(config_entries.OptionsFlow):
                 if not self.hass.states.get(weather):
                     errors[CONF_WEATHER_ENTITY] = "weather_entity_not_found"
                 else:
-                    self.hass.data.setdefault(DOMAIN, {})["weather_entity"] = weather
+                    domain_data = self.hass.data.setdefault(DOMAIN, {})
+                    domain_data["weather_entity"] = weather
+                    meter = user_input.get(CONF_WATER_METER_ENTITY)
+                    if meter:
+                        domain_data["water_meter_entity"] = meter
+                    budget = user_input.get(CONF_DAILY_BUDGET_GALLONS)
+                    if budget is not None:
+                        domain_data["daily_budget_gallons"] = float(budget)
             if not errors:
                 return self.async_create_entry(title="", data=user_input)
 
@@ -182,6 +204,12 @@ class AdaptiveIrrigationOptionsFlow(config_entries.OptionsFlow):
             schema = vol.Schema({
                 vol.Required(CONF_WEATHER_ENTITY, default=defaults.get(CONF_WEATHER_ENTITY, DEFAULT_WEATHER_ENTITY)): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="weather")
+                ),
+                vol.Optional(CONF_WATER_METER_ENTITY, default=defaults.get(CONF_WATER_METER_ENTITY, "")): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Optional(CONF_DAILY_BUDGET_GALLONS, default=defaults.get(CONF_DAILY_BUDGET_GALLONS, DEFAULT_DAILY_BUDGET_GALLONS)): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=0, max=5000, step=10, unit_of_measurement="gal")
                 ),
                 **_zone_schema_dict(defaults),
             })

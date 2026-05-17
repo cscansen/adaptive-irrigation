@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.3] - 2026-05-17
+
+### Added
+- **Water Restriction switch** (`switch.adaptive_irrigation_water_restriction`, system device) — when on, all zones are blocked from watering and report `Paused — water restriction active`. For drought orders or HOA restrictions. State persists across restarts.
+- **Daily Water Budget** (`number.adaptive_irrigation_daily_budget`, system device) — set a daily gallon cap for the whole system. Zones are gated before each session; if the budget is exhausted the zone reports `Skipped — budget exhausted (X/Y gal)`. Duration is truncated if the remaining budget only allows a shorter run. Set to 0 for unlimited (default).
+- **Daily Water Used sensor** (`sensor.adaptive_irrigation_daily_used`, system device) — shows today's total water use. Reads live from a Flume (or any cumulative `sensor.*`) water meter if configured; otherwise accumulates `duration × flow rate` estimates. Resets at midnight local time.
+- **Flow Rate number** (`number.*_flow_rate`) per zone — gallons per minute for the valve (0.5–20, default 2.0). Used to convert runtime to volume for budget tracking.
+- **Water meter entity** and **daily budget** are now configurable in the system setup step and options flow for the primary zone entry. Flume or any cumulative sensor entity can be selected.
+
+### Fixed
+- Master switch label: `"Adaptive Irrigation"` → `"System Active"` so `on = running` is unambiguous on dashboard cards.
+
 ## [0.6.2] - 2026-05-17
 
 ### Added
