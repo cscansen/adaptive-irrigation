@@ -1,0 +1,122 @@
+from __future__ import annotations
+
+from homeassistant.components.number import NumberEntity, NumberMode
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
+from .const import (
+    CONF_MAX_DURATION,
+    CONF_SOIL_THRESHOLD,
+    CONF_WATER_INTERVAL_DAYS,
+    DEFAULT_MAX_DURATION,
+    DEFAULT_SOIL_THRESHOLD,
+    DEFAULT_WATER_INTERVAL_DAYS,
+    DOMAIN,
+)
+from .coordinator import AdaptiveIrrigationCoordinator
+
+
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    coordinator: AdaptiveIrrigationCoordinator = hass.data[DOMAIN][entry.entry_id]
+    async_add_entities([
+        SoilThresholdNumber(coordinator),
+        WaterIntervalNumber(coordinator),
+        MaxDurationNumber(coordinator),
+    ])
+
+
+class _ZoneNumber(CoordinatorEntity[AdaptiveIrrigationCoordinator], RestoreEntity, NumberEntity):
+    _attr_mode = NumberMode.SLIDER
+
+    def __init__(
+        self,
+        coordinator: AdaptiveIrrigationCoordinator,
+        key: str,
+        name: str,
+        unit: str,
+        min_val: float,
+        max_val: float,
+        step: float,
+        default: float,
+    ) -> None:
+        super().__init__(coordinator)
+        zone = coordinator.zone_name
+        self._attr_unique_id = f"{DOMAIN}_{zone}_{key}"
+        self._attr_has_entity_name = True
+        self._attr_name = name
+        self._attr_native_unit_of_measurement = unit
+        self._attr_native_min_value = min_val
+        self._attr_native_max_value = max_val
+        self._attr_native_step = step
+        self._current_value: float = float(default)
+
+    @property
+    def device_info(self):
+        zone = self.coordinator.zone_name
+        return {
+            "identifiers": {(DOMAIN, zone)},
+            "name": f"Adaptive Irrigation — {zone.replace('_', ' ').title()}",
+            "manufacturer": "adaptive_irrigation",
+        }
+
+    @property
+    def native_value(self) -> float:
+        return self._current_value
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_state()
+        if last is not None and last.state not in ("unknown", "unavailable"):
+            try:
+                self._current_value = float(last.state)
+            except ValueError:
+                pass
+        self._push_to_coordinator()
+
+    def _push_to_coordinator(self) -> None:
+        raise NotImplementedError
+
+    async def async_set_native_value(self, value: float) -> None:
+        self._current_value = value
+        self._push_to_coordinator()
+        self.async_write_ha_state()
+
+
+class SoilThresholdNumber(_ZoneNumber):
+    _attr_icon = "mdi:water-percent"
+
+    def __init__(self, coordinator: AdaptiveIrrigationCoordinator) -> None:
+        default = coordinator.config.get(CONF_SOIL_THRESHOLD, DEFAULT_SOIL_THRESHOLD)
+        super().__init__(coordinator, "soil_threshold", "Soil Threshold", "%", 60.0, 99.0, 1.0, default)
+
+    def _push_to_coordinator(self) -> None:
+        self.coordinator.set_live_threshold(self._current_value)
+
+
+class WaterIntervalNumber(_ZoneNumber):
+    _attr_icon = "mdi:calendar-clock"
+
+    def __init__(self, coordinator: AdaptiveIrrigationCoordinator) -> None:
+        default = coordinator.config.get(CONF_WATER_INTERVAL_DAYS, DEFAULT_WATER_INTERVAL_DAYS)
+        super().__init__(coordinator, "water_interval_days", "Water Interval", "d", 1.0, 14.0, 1.0, default)
+
+    def _push_to_coordinator(self) -> None:
+        self.coordinator.set_live_water_interval(int(self._current_value))
+
+
+class MaxDurationNumber(_ZoneNumber):
+    _attr_icon = "mdi:timer-outline"
+
+    def __init__(self, coordinator: AdaptiveIrrigationCoordinator) -> None:
+        default = coordinator.config.get(CONF_MAX_DURATION, DEFAULT_MAX_DURATION)
+        super().__init__(coordinator, "max_duration", "Max Duration", "min", 1.0, 60.0, 1.0, default)
+
+    def _push_to_coordinator(self) -> None:
+        self.coordinator.set_live_max_duration(int(self._current_value))

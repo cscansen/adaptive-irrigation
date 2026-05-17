@@ -39,7 +39,15 @@ A Home Assistant custom integration that makes soil-moisture-aware, weather-info
 | Water interval days | Sensor-free zones: base days between waterings; also early-waters if peers are drying > 0.3%/h and half the interval has passed | 3 |
 | Min interval | Prevent re-watering within this window | 45 min |
 
-## Entities (per zone)
+## Entities
+
+### Integration-level
+
+| Entity | Description |
+|--------|-------------|
+| `switch.adaptive_irrigation` | Master pause — disables all zones without touching per-zone switches |
+
+### Per zone
 
 | Entity | Description |
 |--------|-------------|
@@ -49,7 +57,11 @@ A Home Assistant custom integration that makes soil-moisture-aware, weather-info
 | `sensor.*_status` | Human-readable last decision |
 | `sensor.*_last_watered` | Timestamp of last watering |
 | `sensor.*_calibration_rate` | Measured moisture rise %/min |
-| `switch.*_auto_watering` | Enable/disable automatic watering |
+| `switch.*_auto_watering` | Enable/disable automatic watering for this zone |
+| `switch.*_seedling_mode` | Toggle seedling/germination watering windows live |
+| `number.*_soil_threshold` | Moisture % trigger threshold (60–99%) |
+| `number.*_water_interval_days` | Drip zone base interval between waterings (1–14 days) |
+| `number.*_max_duration` | Hard cap on watering time (1–60 min) |
 
 ## Services
 

@@ -63,6 +63,38 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
         self._last_duration: int = 0
         self._startup_poll_done: bool = False  # first poll skips watering; entities restore before second
 
+        # Live-tunable values — None means fall back to config
+        self._seedling_mode: bool | None = None
+        self._live_threshold: float | None = None
+        self._live_water_interval_days: int | None = None
+        self._live_max_duration: int | None = None
+
+    # --- Effective-value properties (live entity overrides config) ---
+
+    @property
+    def _effective_seedling_mode(self) -> bool:
+        if self._seedling_mode is not None:
+            return self._seedling_mode
+        return self.config.get(CONF_ZONE_TYPE, DEFAULT_ZONE_TYPE) == ZONE_TYPE_SEEDLING
+
+    @property
+    def _effective_threshold(self) -> float:
+        if self._live_threshold is not None:
+            return self._live_threshold
+        return float(self.config.get(CONF_SOIL_THRESHOLD, DEFAULT_SOIL_THRESHOLD))
+
+    @property
+    def _effective_water_interval(self) -> int:
+        if self._live_water_interval_days is not None:
+            return self._live_water_interval_days
+        return int(self.config.get(CONF_WATER_INTERVAL_DAYS, DEFAULT_WATER_INTERVAL_DAYS))
+
+    @property
+    def _effective_max_duration(self) -> int:
+        if self._live_max_duration is not None:
+            return self._live_max_duration
+        return int(self.config.get(CONF_MAX_DURATION, DEFAULT_MAX_DURATION))
+
     # --- Entity callbacks (called after restore) ---
 
     def set_auto_enabled(self, enabled: bool) -> None:
@@ -73,6 +105,18 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
 
     def set_calibration(self, rate: float | None) -> None:
         self._calibration = rate
+
+    def set_seedling_mode(self, enabled: bool) -> None:
+        self._seedling_mode = enabled
+
+    def set_live_threshold(self, value: float) -> None:
+        self._live_threshold = value
+
+    def set_live_water_interval(self, value: int) -> None:
+        self._live_water_interval_days = value
+
+    def set_live_max_duration(self, value: int) -> None:
+        self._live_max_duration = value
 
     # --- Main poll ---
 
@@ -93,6 +137,9 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
         if not self._auto_enabled:
             return {**base, "status": "Disabled"}
 
+        if not self.hass.data[DOMAIN].get("master_enabled", True):
+            return {**base, "status": "Disabled — master switch off"}
+
         # Skip watering decisions on the very first poll — entities haven't restored
         # last_watered / calibration yet (restore happens after first_refresh completes)
         if not self._startup_poll_done:
@@ -100,7 +147,7 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
             return {**base, "status": "Idle"}
 
         # Seedling mode: only evaluate during the 4 daily time windows
-        if self.config.get(CONF_ZONE_TYPE, DEFAULT_ZONE_TYPE) == ZONE_TYPE_SEEDLING:
+        if self._effective_seedling_mode:
             if not self._in_seedling_window():
                 now = dt_util.now()
                 next_window = self._next_seedling_window(now)
@@ -134,7 +181,7 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
                 return {**base, "status": "Deferred — motion detected"}
 
         # Decision
-        threshold = self.config.get(CONF_SOIL_THRESHOLD, DEFAULT_SOIL_THRESHOLD)
+        threshold = self._effective_threshold
         sensor_required = self.config.get(CONF_SENSOR_REQUIRED, True)
         precip = float(weather.get("precipitation", 0) or 0) if weather else 0
         wind = float(weather.get("wind_speed", 0) or 0) if weather else 0
@@ -148,7 +195,7 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
         if decision in ("WATER", "MONITOR"):
             if self._watering_lock.locked():
                 return {**base, "status": "Watering in progress"}
-            max_dur = int(self.config.get(CONF_MAX_DURATION, DEFAULT_MAX_DURATION))
+            max_dur = self._effective_max_duration
             fallback = int(self.config.get(CONF_FALLBACK_DURATION, DEFAULT_FALLBACK_DURATION))
             duration = calibrated_duration(
                 moisture or 0, threshold + 5, self._calibration, fallback, max_dur
@@ -320,7 +367,7 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
     async def _decide_sensor_free(self, base: dict, wind: float, precip: float) -> dict:
         """Decision path for zones with no soil sensor. Uses peer trend + interval floor."""
         zone_label = self.zone_name.replace("_", " ").title()
-        interval = int(self.config.get(CONF_WATER_INTERVAL_DAYS, DEFAULT_WATER_INTERVAL_DAYS))
+        interval = self._effective_water_interval
         fallback = int(self.config.get(CONF_FALLBACK_DURATION, DEFAULT_FALLBACK_DURATION))
 
         if wind > 25:

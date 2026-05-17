@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.5.0] - 2026-05-17
+
+### Added
+- **Master switch** (`switch.adaptive_irrigation`) — integration-level pause; blocks all zones without touching per-zone auto-watering switches. Persists across restarts. Lives on a shared "Adaptive Irrigation" device.
+- **Seedling Mode switch** per zone (`switch.*_seedling_mode`) — toggle seedling/germination mode live from the dashboard without re-entering config flow. Default state is inferred from zone type at setup; persists across restarts.
+- **Soil Threshold slider** per zone (`number.*_soil_threshold`) — live-adjust the moisture % below which watering triggers. Range 60–99%, step 1%. Defaults to configured value; persists across restarts.
+- **Water Interval slider** per zone (`number.*_water_interval_days`) — live-adjust drip zone base watering interval. Range 1–14 days, step 1. Only meaningful for sensor-free zones. Persists across restarts.
+- **Max Duration slider** per zone (`number.*_max_duration`) — live cap on watering time. Range 1–60 min, step 1. Persists across restarts.
+- All live-tunable values fall back to the zone's config-flow setting when not yet restored.
+
 ## [0.4.1] - 2026-05-17
 
 ### Fixed
