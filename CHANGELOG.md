@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.0] - 2026-05-17
+
+### Added
+- **Peer trend inference** for sensor-free zones (drip/trees): averages moisture trend from zones that have real soil sensors to infer yard drying rate
+- Sensor-free zones now use a proper decision path (`_decide_sensor_free`) instead of watering unconditionally every poll — fixes a bug where drip zones would have tried to water every 15 minutes
+- `water_interval_days` config field: base interval between waterings for sensor-free zones (default 3 days); also acts as fallback floor when no peer trend is available
+- Early watering when peers are drying faster than −0.3%/hr and at least half the interval has passed
+- Status sensor shows days remaining until next watering and current peer trend for sensor-free zones
+- Sprinkler icon (`icon.png`) added to integration
+
+### Fixed
+- `logic.decide()` no longer has a dead `sensor_required=False → WATER` branch; sensor-free logic fully moved to coordinator
+
 ## [0.3.1] - 2026-05-17
 
 ### Fixed

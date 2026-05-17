@@ -11,6 +11,7 @@ CONF_FALLBACK_DURATION = "fallback_duration"
 CONF_CROP_COEFFICIENT = "crop_coefficient"
 CONF_SENSOR_REQUIRED = "sensor_required"
 CONF_MIN_INTERVAL = "min_interval"
+CONF_WATER_INTERVAL_DAYS = "water_interval_days"
 
 ZONE_TYPE_SUMMER = "summer"
 ZONE_TYPE_SEEDLING = "seedling"
@@ -20,6 +21,9 @@ DEFAULT_ZONE_TYPE = ZONE_TYPE_SUMMER
 SEEDLING_WINDOWS = [(6 * 60, 6 * 60 + 30), (10 * 60, 10 * 60 + 30), (14 * 60, 14 * 60 + 30), (18 * 60, 18 * 60 + 30)]
 SEEDLING_DEFAULT_THRESHOLD = 93
 SEEDLING_DEFAULT_FALLBACK = 4
+
+DEFAULT_WATER_INTERVAL_DAYS = 3
+PEER_TREND_DRYING_THRESHOLD = -0.3  # %/hr — peers drying this fast triggers early watering
 
 DEFAULT_SOIL_THRESHOLD = 92
 DEFAULT_MAX_DURATION = 20

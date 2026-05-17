@@ -14,6 +14,7 @@ from .const import (
     CONF_SOIL_SENSORS,
     CONF_SOIL_THRESHOLD,
     CONF_VALVE_SWITCH,
+    CONF_WATER_INTERVAL_DAYS,
     CONF_ZONE_NAME,
     CONF_ZONE_TYPE,
     DEFAULT_CROP_COEFFICIENT,
@@ -21,6 +22,7 @@ from .const import (
     DEFAULT_MAX_DURATION,
     DEFAULT_MIN_INTERVAL,
     DEFAULT_SOIL_THRESHOLD,
+    DEFAULT_WATER_INTERVAL_DAYS,
     DEFAULT_ZONE_TYPE,
     DOMAIN,
     SEEDLING_DEFAULT_FALLBACK,
@@ -76,6 +78,9 @@ def _zone_schema(defaults: dict) -> vol.Schema:
                 selector.SelectSelectorConfig(options=CROP_OPTIONS)
             ),
             vol.Optional(CONF_SENSOR_REQUIRED, default=defaults.get(CONF_SENSOR_REQUIRED, True)): selector.BooleanSelector(),
+            vol.Optional(CONF_WATER_INTERVAL_DAYS, default=defaults.get(CONF_WATER_INTERVAL_DAYS, DEFAULT_WATER_INTERVAL_DAYS)): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=1, max=14, step=1, unit_of_measurement="days")
+            ),
             vol.Optional(CONF_MIN_INTERVAL, default=defaults.get(CONF_MIN_INTERVAL, DEFAULT_MIN_INTERVAL)): selector.NumberSelector(
                 selector.NumberSelectorConfig(min=15, max=240, step=15, unit_of_measurement="min")
             ),

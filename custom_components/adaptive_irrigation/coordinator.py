@@ -21,14 +21,17 @@ from .const import (
     CONF_SOIL_SENSORS,
     CONF_SOIL_THRESHOLD,
     CONF_VALVE_SWITCH,
+    CONF_WATER_INTERVAL_DAYS,
     CONF_ZONE_TYPE,
     DEFAULT_CROP_COEFFICIENT,
     DEFAULT_FALLBACK_DURATION,
     DEFAULT_MAX_DURATION,
     DEFAULT_MIN_INTERVAL,
     DEFAULT_SOIL_THRESHOLD,
+    DEFAULT_WATER_INTERVAL_DAYS,
     DEFAULT_ZONE_TYPE,
     DOMAIN,
+    PEER_TREND_DRYING_THRESHOLD,
     SCAN_INTERVAL_MINUTES,
     SEEDLING_WINDOWS,
     STALE_SENSOR_HOURS,
@@ -128,6 +131,10 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
         sensor_required = self.config.get(CONF_SENSOR_REQUIRED, True)
         precip = float(weather.get("precipitation", 0) or 0) if weather else 0
         wind = float(weather.get("wind_speed", 0) or 0) if weather else 0
+
+        # Sensor-free zones (drip/trees) use peer trend inference instead of decide()
+        if not sensor_required:
+            return await self._decide_sensor_free(base, wind, precip)
 
         decision = decide(moisture, threshold, trend, precip, wind, sensor_required)
 
@@ -300,6 +307,62 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
             return None
         slope = (n * sum(x * y for x, y in zip(xs, ys)) - sum(xs) * sum(ys)) / denom
         return round(slope * 3600, 3)
+
+    # --- Sensor-free zone (drip/trees) decision ---
+
+    async def _decide_sensor_free(self, base: dict, wind: float, precip: float) -> dict:
+        """Decision path for zones with no soil sensor. Uses peer trend + interval floor."""
+        zone_label = self.zone_name.replace("_", " ").title()
+        interval = int(self.config.get(CONF_WATER_INTERVAL_DAYS, DEFAULT_WATER_INTERVAL_DAYS))
+        fallback = int(self.config.get(CONF_FALLBACK_DURATION, DEFAULT_FALLBACK_DURATION))
+
+        if wind > 25:
+            self._notify(f"irrigation_{self.zone_name}_session", f"Deferred — wind at {wind:.0f} mph.")
+            return {**base, "status": f"Deferred — wind {wind:.0f} mph"}
+
+        if precip >= 0.15:
+            self._notify(f"irrigation_{self.zone_name}_session", "Skipped — rain in the forecast.")
+            return {**base, "status": "Skipped — rain forecast"}
+
+        days_since = (
+            (dt_util.utcnow() - self._last_watered).total_seconds() / 86400
+            if self._last_watered else 999.0
+        )
+
+        peer_trend = self._infer_trend_from_peers()
+
+        # Drying fast + at least half the interval has passed → water early
+        if peer_trend is not None and peer_trend < PEER_TREND_DRYING_THRESHOLD and days_since >= interval / 2:
+            reason = f"peers drying at {peer_trend:+.2f}%/h, {days_since:.1f}d since last watering"
+            should_water = True
+        # Full interval elapsed (regardless of peer trend)
+        elif days_since >= interval:
+            reason = f"{days_since:.1f}d since last watering"
+            should_water = True
+        else:
+            remaining = interval - days_since
+            peer_note = f", peer trend {peer_trend:+.2f}%/h" if peer_trend is not None else " (no peer data)"
+            return {**base, "status": f"Idle — {remaining:.1f}d until next watering{peer_note}"}
+
+        if self._watering_lock.locked():
+            return {**base, "status": "Watering in progress"}
+
+        self.hass.async_create_task(self._water_zone(fallback, None, f"sensor-free: {reason}"))
+        return {**base, "status": f"Watering — {fallback} min"}
+
+    def _infer_trend_from_peers(self) -> float | None:
+        """Average moisture trend from zones that have real soil sensors."""
+        trends = []
+        for entry_id, coord in self.hass.data.get(DOMAIN, {}).items():
+            if entry_id == self.entry.entry_id:
+                continue
+            if not isinstance(coord, AdaptiveIrrigationCoordinator):
+                continue
+            if not coord.config.get(CONF_SENSOR_REQUIRED, True):
+                continue  # skip other sensor-free zones
+            if coord.data and coord.data.get("trend") is not None:
+                trends.append(coord.data["trend"])
+        return round(sum(trends) / len(trends), 3) if trends else None
 
     # --- Seedling window helpers ---
 

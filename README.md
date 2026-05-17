@@ -36,6 +36,7 @@ A Home Assistant custom integration that makes soil-moisture-aware, weather-info
 | Fallback duration | Used when sensor is stale or no calibration data | 6 min |
 | Crop coefficient (Kc) | Scales reference ET for zone type | 0.8 (lawn) |
 | Sensor required | Disable for drip zones with no soil sensor | on |
+| Water interval days | Sensor-free zones: base days between waterings; also early-waters if peers are drying > 0.3%/h and half the interval has passed | 3 |
 | Min interval | Prevent re-watering within this window | 45 min |
 
 ## Entities (per zone)

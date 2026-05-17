@@ -31,16 +31,13 @@ def decide(
     sensor_required: bool,
 ) -> str:
     """
-    Return one of: WATER, SKIP, DEFER_WIND, DEFER_MOTION, MONITOR.
-    Called per zone each coordinator cycle. Motion check is done by the coordinator
-    before calling this function — DEFER_MOTION is passed in directly when motion is active.
+    Return one of: WATER, SKIP, DEFER_WIND, MONITOR.
+    Only called for zones with soil sensors (sensor_required=True).
+    Sensor-free zones are handled by coordinator._decide_sensor_free().
+    Motion check is handled by the coordinator before calling this function.
     """
     if wind_mph > 25:
         return "DEFER_WIND"
-
-    if not sensor_required:
-        # ET + calendar mode — always return WATER; duration/timing handled by coordinator
-        return "WATER"
 
     if moisture is None:
         return "WATER"  # stale/unavailable sensor → fallback watering
