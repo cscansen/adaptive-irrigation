@@ -138,7 +138,7 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
         if not self._auto_enabled:
             return {**base, "status": "Disabled"}
 
-        if not self.hass.data[DOMAIN].get("master_enabled", True):
+        if not self.hass.data.get(DOMAIN, {}).get("master_enabled", True):
             return {**base, "status": "Disabled — master switch off"}
 
         # Skip watering decisions on the very first poll — entities haven't restored

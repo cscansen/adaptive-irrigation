@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.5.2] - 2026-05-17
+
+### Fixed
+- `KeyError: 'adaptive_irrigation'` crash on startup: coordinator's first refresh fires before `hass.data[DOMAIN]` is populated, so the new master-switch check blew up. Changed to `hass.data.get(DOMAIN, {}).get("master_enabled", True)`.
+
 ## [0.5.1] - 2026-05-17
 
 ### Fixed
