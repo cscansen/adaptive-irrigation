@@ -126,11 +126,15 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
         trend = await self._read_moisture_trend()
         weather = await self._fetch_weather()
         et_today = self._compute_et(weather) if weather else None
+        precip = round(float(weather.get("precipitation", 0) or 0), 2) if weather else 0.0
+        wind = round(float(weather.get("wind_speed", 0) or 0), 1) if weather else 0.0
 
         base = {
             "moisture": moisture,
             "trend": trend,
             "et_today": et_today,
+            "precip": precip,
+            "wind": wind,
             "last_watered": self._last_watered,
             "calibration": self._calibration,
         }
@@ -189,8 +193,6 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
         # Decision
         threshold = self._effective_threshold
         sensor_required = self.config.get(CONF_SENSOR_REQUIRED, True)
-        precip = float(weather.get("precipitation", 0) or 0) if weather else 0
-        wind = float(weather.get("wind_speed", 0) or 0) if weather else 0
 
         # Sensor-free zones (drip/trees) use peer trend inference instead of decide()
         if not sensor_required:
@@ -207,15 +209,21 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
                 moisture or 0, threshold + 5, self._calibration, fallback, max_dur
             )
             self.hass.async_create_task(self._water_zone(duration, moisture, decision))
-            status = f"Watering — {duration} min"
+            trend_note = f", trend {trend:+.2f}%/h" if trend is not None else ""
+            m_note = f" (soil {moisture:.0f}%{trend_note})" if moisture is not None else ""
+            status = f"Watering — {duration} min{m_note}"
         elif decision == "SKIP":
-            msg = (
-                f"Soil is at {moisture:.0f}% — above the {threshold}% threshold."
-                if moisture is not None
-                else "Soil adequate — skipping."
-            )
+            rain_note = f", {precip:.2f} in rain" if precip >= 0.05 else ""
+            if precip >= 0.15 and moisture is not None and moisture > 85:
+                status = f"Skipped — {precip:.2f} in rain forecast, soil {moisture:.0f}%"
+                msg = f"Skipping — {precip:.2f} in of rain in the forecast and soil is already at {moisture:.0f}%."
+            elif moisture is not None:
+                status = f"Skipped — soil {moisture:.0f}% ≥ {threshold:.0f}%{rain_note}"
+                msg = f"Soil is at {moisture:.0f}% — above the {threshold:.0f}% threshold.{' Rain: ' + f'{precip:.2f} in.' if precip >= 0.05 else ''}"
+            else:
+                status = f"Skipped{rain_note}"
+                msg = "Soil adequate — skipping."
             self._notify(f"irrigation_{self.zone_name}_session", msg)
-            status = f"Skipped — soil at {moisture:.0f}%" if moisture else "Skipped"
         elif decision == "DEFER_WIND":
             self._notify(
                 f"irrigation_{self.zone_name}_session",
@@ -381,8 +389,8 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
             return {**base, "status": f"Deferred — wind {wind:.0f} mph"}
 
         if precip >= 0.15:
-            self._notify(f"irrigation_{self.zone_name}_session", "Skipped — rain in the forecast.")
-            return {**base, "status": "Skipped — rain forecast"}
+            self._notify(f"irrigation_{self.zone_name}_session", f"Skipped — {precip:.2f} in of rain in the forecast.")
+            return {**base, "status": f"Skipped — {precip:.2f} in rain forecast"}
 
         days_since = (
             (dt_util.utcnow() - self._last_watered).total_seconds() / 86400

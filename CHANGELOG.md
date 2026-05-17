@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.6.0] - 2026-05-17
+
+### Added
+- **Rain Forecast sensor** per zone (`sensor.*_rain_forecast`) — inches of precipitation in today's forecast; now visible on dashboard and always available regardless of whether rain actually causes a skip
+- **Wind Forecast sensor** per zone (`sensor.*_wind_forecast`) — mph from today's forecast
+
+### Changed
+- Status messages now include weather and soil context for every decision:
+  - Watering: `Watering — 8 min (soil 88%, trend −0.6%/h)`
+  - Soil skip: `Skipped — soil 97% ≥ 92%, 0.20 in rain`
+  - Rain+soil skip: `Skipped — 0.25 in rain forecast, soil 91%`
+  - Rain skip (sensor-free): `Skipped — 0.25 in rain forecast`
+  - Wind defer: unchanged (already showed mph)
+- Dashboard rebuilt: one compact entities card per zone replaces the previous cluttered glance/stack layout
+
 ## [0.5.2] - 2026-05-17
 
 ### Fixed

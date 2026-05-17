@@ -28,6 +28,8 @@ async def async_setup_entry(
         MoistureSensor(coordinator, zone),
         TrendSensor(coordinator, zone),
         ETSensor(coordinator, zone),
+        ForecastPrecipSensor(coordinator, zone),
+        ForecastWindSensor(coordinator, zone),
         StatusSensor(coordinator, zone),
         LastWateredSensor(coordinator, zone),
         CalibrationSensor(coordinator, zone),
@@ -90,6 +92,34 @@ class ETSensor(_ZoneBase, SensorEntity):
     @property
     def native_value(self):
         return self.coordinator.data.get("et_today") if self.coordinator.data else None
+
+
+class ForecastPrecipSensor(_ZoneBase, SensorEntity):
+    _attr_native_unit_of_measurement = "in"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:weather-rainy"
+
+    def __init__(self, coordinator, zone):
+        super().__init__(coordinator, zone, "forecast_precip")
+        self._attr_name = "Rain Forecast"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("precip") if self.coordinator.data else None
+
+
+class ForecastWindSensor(_ZoneBase, SensorEntity):
+    _attr_native_unit_of_measurement = "mph"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:weather-windy"
+
+    def __init__(self, coordinator, zone):
+        super().__init__(coordinator, zone, "forecast_wind")
+        self._attr_name = "Wind Forecast"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("wind") if self.coordinator.data else None
 
 
 class StatusSensor(_ZoneBase, SensorEntity):
