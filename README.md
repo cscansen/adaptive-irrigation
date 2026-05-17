@@ -27,6 +27,7 @@ A Home Assistant custom integration that makes soil-moisture-aware, weather-info
 | Field | Description | Default |
 |-------|-------------|---------|
 | Zone name | Unique identifier (e.g. `east`) | — |
+| Zone type | `Summer` — threshold-based, any time. `Seedling` — 4×/day windows (06:00, 10:00, 14:00, 18:00), 93% threshold | Summer |
 | Valve switch | `switch.yardian_controller_*` entity | — |
 | Soil sensors | One or more `sensor.*` entities (averaged) | — |
 | Motion sensor | Optional `binary_sensor.*` to defer watering | — |

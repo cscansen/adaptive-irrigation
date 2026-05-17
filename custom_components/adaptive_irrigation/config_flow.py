@@ -15,13 +15,24 @@ from .const import (
     CONF_SOIL_THRESHOLD,
     CONF_VALVE_SWITCH,
     CONF_ZONE_NAME,
+    CONF_ZONE_TYPE,
     DEFAULT_CROP_COEFFICIENT,
     DEFAULT_FALLBACK_DURATION,
     DEFAULT_MAX_DURATION,
     DEFAULT_MIN_INTERVAL,
     DEFAULT_SOIL_THRESHOLD,
+    DEFAULT_ZONE_TYPE,
     DOMAIN,
+    SEEDLING_DEFAULT_FALLBACK,
+    SEEDLING_DEFAULT_THRESHOLD,
+    ZONE_TYPE_SEEDLING,
+    ZONE_TYPE_SUMMER,
 )
+
+ZONE_TYPE_OPTIONS = [
+    selector.SelectOptionDict(value=ZONE_TYPE_SUMMER, label="Summer (daily threshold-based)"),
+    selector.SelectOptionDict(value=ZONE_TYPE_SEEDLING, label="Seedling / Germination (4×/day windows, 93% threshold)"),
+]
 
 CROP_OPTIONS = [
     selector.SelectOptionDict(value="0.8", label="Lawn (Kc 0.8)"),
@@ -32,9 +43,17 @@ CROP_OPTIONS = [
 
 
 def _zone_schema(defaults: dict) -> vol.Schema:
+    zone_type = defaults.get(CONF_ZONE_TYPE, DEFAULT_ZONE_TYPE)
+    is_seedling = zone_type == ZONE_TYPE_SEEDLING
+    default_threshold = defaults.get(CONF_SOIL_THRESHOLD, SEEDLING_DEFAULT_THRESHOLD if is_seedling else DEFAULT_SOIL_THRESHOLD)
+    default_fallback = defaults.get(CONF_FALLBACK_DURATION, SEEDLING_DEFAULT_FALLBACK if is_seedling else DEFAULT_FALLBACK_DURATION)
+
     return vol.Schema(
         {
             vol.Required(CONF_ZONE_NAME, default=defaults.get(CONF_ZONE_NAME, "")): str,
+            vol.Required(CONF_ZONE_TYPE, default=zone_type): selector.SelectSelector(
+                selector.SelectSelectorConfig(options=ZONE_TYPE_OPTIONS)
+            ),
             vol.Required(CONF_VALVE_SWITCH, default=defaults.get(CONF_VALVE_SWITCH, "")): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="switch")
             ),
@@ -44,13 +63,13 @@ def _zone_schema(defaults: dict) -> vol.Schema:
             vol.Optional(CONF_MOTION_SENSOR, default=defaults.get(CONF_MOTION_SENSOR, "")): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="binary_sensor")
             ),
-            vol.Optional(CONF_SOIL_THRESHOLD, default=defaults.get(CONF_SOIL_THRESHOLD, DEFAULT_SOIL_THRESHOLD)): selector.NumberSelector(
+            vol.Optional(CONF_SOIL_THRESHOLD, default=default_threshold): selector.NumberSelector(
                 selector.NumberSelectorConfig(min=50, max=99, step=1, unit_of_measurement="%")
             ),
             vol.Optional(CONF_MAX_DURATION, default=defaults.get(CONF_MAX_DURATION, DEFAULT_MAX_DURATION)): selector.NumberSelector(
                 selector.NumberSelectorConfig(min=1, max=60, step=1, unit_of_measurement="min")
             ),
-            vol.Optional(CONF_FALLBACK_DURATION, default=defaults.get(CONF_FALLBACK_DURATION, DEFAULT_FALLBACK_DURATION)): selector.NumberSelector(
+            vol.Optional(CONF_FALLBACK_DURATION, default=default_fallback): selector.NumberSelector(
                 selector.NumberSelectorConfig(min=1, max=30, step=1, unit_of_measurement="min")
             ),
             vol.Optional(CONF_CROP_COEFFICIENT, default=defaults.get(CONF_CROP_COEFFICIENT, DEFAULT_CROP_COEFFICIENT)): selector.SelectSelector(

@@ -21,15 +21,19 @@ from .const import (
     CONF_SOIL_SENSORS,
     CONF_SOIL_THRESHOLD,
     CONF_VALVE_SWITCH,
+    CONF_ZONE_TYPE,
     DEFAULT_CROP_COEFFICIENT,
     DEFAULT_FALLBACK_DURATION,
     DEFAULT_MAX_DURATION,
     DEFAULT_MIN_INTERVAL,
     DEFAULT_SOIL_THRESHOLD,
+    DEFAULT_ZONE_TYPE,
     DOMAIN,
     SCAN_INTERVAL_MINUTES,
+    SEEDLING_WINDOWS,
     STALE_SENSOR_HOURS,
     TREND_HOURS,
+    ZONE_TYPE_SEEDLING,
 )
 from .logic import calibrated_duration, decide, hargreaves_et
 
@@ -84,6 +88,13 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
 
         if not self._auto_enabled:
             return {**base, "status": "Disabled"}
+
+        # Seedling mode: only evaluate during the 4 daily time windows
+        if self.config.get(CONF_ZONE_TYPE, DEFAULT_ZONE_TYPE) == ZONE_TYPE_SEEDLING:
+            if not self._in_seedling_window():
+                now = dt_util.now()
+                next_window = self._next_seedling_window(now)
+                return {**base, "status": f"Idle — next seedling window at {next_window}"}
 
         # Guard: watered recently by us
         min_interval = self.config.get(CONF_MIN_INTERVAL, DEFAULT_MIN_INTERVAL)
@@ -289,6 +300,22 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
             return None
         slope = (n * sum(x * y for x, y in zip(xs, ys)) - sum(xs) * sum(ys)) / denom
         return round(slope * 3600, 3)
+
+    # --- Seedling window helpers ---
+
+    def _in_seedling_window(self) -> bool:
+        now = dt_util.now()
+        total_min = now.hour * 60 + now.minute
+        return any(start <= total_min < end for start, end in SEEDLING_WINDOWS)
+
+    def _next_seedling_window(self, now) -> str:
+        total_min = now.hour * 60 + now.minute
+        for start, _ in SEEDLING_WINDOWS:
+            if start > total_min:
+                return f"{start // 60:02d}:{start % 60:02d}"
+        # All windows passed today — first window tomorrow
+        start = SEEDLING_WINDOWS[0][0]
+        return f"{start // 60:02d}:{start % 60:02d} (tomorrow)"
 
     # --- Notification helper ---
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.0] - 2026-05-17
+
+### Added
+- **Zone Type** field in config flow: `Summer` (default) or `Seedling / Germination`
+- Seedling mode gates watering to 4 daily windows: 06:00, 10:00, 14:00, 18:00 (±30 min each)
+- Seedling mode defaults to 93% soil threshold and 4 min fallback duration
+- Status sensor shows next window time when outside seedling windows
+- Threshold and fallback duration fields now default based on selected zone type
+
 ## [0.2.1] - 2026-05-17
 
 ### Fixed

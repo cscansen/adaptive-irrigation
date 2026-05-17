@@ -1,6 +1,7 @@
 DOMAIN = "adaptive_irrigation"
 
 CONF_ZONE_NAME = "zone_name"
+CONF_ZONE_TYPE = "zone_type"
 CONF_VALVE_SWITCH = "valve_switch"
 CONF_SOIL_SENSORS = "soil_sensors"
 CONF_MOTION_SENSOR = "motion_sensor"
@@ -10,6 +11,15 @@ CONF_FALLBACK_DURATION = "fallback_duration"
 CONF_CROP_COEFFICIENT = "crop_coefficient"
 CONF_SENSOR_REQUIRED = "sensor_required"
 CONF_MIN_INTERVAL = "min_interval"
+
+ZONE_TYPE_SUMMER = "summer"
+ZONE_TYPE_SEEDLING = "seedling"
+DEFAULT_ZONE_TYPE = ZONE_TYPE_SUMMER
+
+# Seedling mode: 4 watering windows per day (start_min, end_min) in local time
+SEEDLING_WINDOWS = [(6 * 60, 6 * 60 + 30), (10 * 60, 10 * 60 + 30), (14 * 60, 14 * 60 + 30), (18 * 60, 18 * 60 + 30)]
+SEEDLING_DEFAULT_THRESHOLD = 93
+SEEDLING_DEFAULT_FALLBACK = 4
 
 DEFAULT_SOIL_THRESHOLD = 92
 DEFAULT_MAX_DURATION = 20
