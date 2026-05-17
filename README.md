@@ -12,7 +12,7 @@ A Home Assistant custom integration that makes soil-moisture-aware, weather-info
 - **Self-calibration** — measures actual moisture rise per minute after each watering; improves duration estimates over time
 - **Persistent notifications** — per-zone dashboard cards for every watering decision
 - **Manual override services** — `water_zone` and `evaluate_now`
-- **Sensor-free mode** — drip zones with no soil sensor run on ET + elapsed time
+- **Sensor-free mode** — drip zones with no soil sensor infer drying rate from peer zones' moisture trends; falls back to a configurable day interval
 
 ## Installation
 
@@ -75,15 +75,28 @@ data:
 Each poll cycle (every 15 min) per zone:
 
 1. Auto watering switch off → skip
-2. Watered within min_interval → skip
-3. Motion detected → defer (notify)
-4. Wind > 25 mph → defer (notify)
-5. Rain forecast ≥ 0.15 in AND soil > 85% → skip
-6. Soil < threshold → **water**
-7. Soil ≥ threshold AND drying faster than 0.5%/hr AND < 3h until threshold-5% → **water** (pre-emptive)
-8. Otherwise → skip
+2. Watered within `min_interval` OR valve ran recently (any source) OR valve currently ON → skip
+3. **Seedling zones only**: outside a 06:00 / 10:00 / 14:00 / 18:00 (±30 min) window → skip
+4. Motion detected → defer (notify)
+5. Wind > 25 mph → defer (notify)
 
-Duration = `(target - current) / calibration_rate`, capped at max_duration. Falls back to fallback_duration until 1+ calibration points exist.
+**Zones with soil sensors:**
+
+6. Rain forecast ≥ 0.15 in AND soil > 85% → skip
+7. Soil < threshold → **water**
+8. Soil ≥ threshold AND drying faster than 0.5%/hr AND < 3h until threshold−5% → **water** (pre-emptive)
+9. Otherwise → skip
+
+Duration = `(target - current) / calibration_rate`, capped at max_duration. Falls back to fallback_duration until calibration exists.
+
+**Sensor-free zones (drip/trees):**
+
+6. Rain forecast ≥ 0.15 in → skip
+7. Peer zones drying faster than −0.3%/hr AND ≥ half of `water_interval_days` elapsed → **water** (early)
+8. `water_interval_days` elapsed → **water**
+9. Otherwise → skip
+
+Duration = `fallback_duration` (fixed; no calibration without a sensor).
 
 ## Soil Sensor Notes
 
