@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.1] - 2026-05-17
+
+### Fixed
+- Motion sensor field is now truly optional — no default entity required, zones without a motion sensor can be configured without errors
+
 ## [0.3.0] - 2026-05-17
 
 ### Added

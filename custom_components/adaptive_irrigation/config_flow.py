@@ -60,7 +60,7 @@ def _zone_schema(defaults: dict) -> vol.Schema:
             vol.Optional(CONF_SOIL_SENSORS, default=defaults.get(CONF_SOIL_SENSORS, [])): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="sensor", multiple=True)
             ),
-            vol.Optional(CONF_MOTION_SENSOR, default=defaults.get(CONF_MOTION_SENSOR, "")): selector.EntitySelector(
+            vol.Optional(CONF_MOTION_SENSOR): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="binary_sensor")
             ),
             vol.Optional(CONF_SOIL_THRESHOLD, default=default_threshold): selector.NumberSelector(
