@@ -68,6 +68,7 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
 
         self._auto_enabled: bool = True
         self._last_watered: datetime | None = None
+        self._last_moisture: float | None = None
         self._calibration: float | None = None
         self._watering_lock = asyncio.Lock()
         self._soil_before: float | None = None
@@ -200,7 +201,10 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
             self._startup_poll_done = True
             if self._last_watered is None:
                 await self._init_last_watered_from_history()
-            return {**base, "last_watered": self._last_watered, "status": "Idle"}
+            if moisture is None:
+                moisture = await self._init_moisture_from_history()
+                self._last_moisture = moisture
+            return {**base, "moisture": moisture, "last_watered": self._last_watered, "status": "Idle"}
 
         # Seedling mode: only evaluate during the 4 daily time windows
         if self._effective_seedling_mode:
@@ -413,7 +417,12 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
                 readings.append(float(state.state))
             except ValueError:
                 pass
-        return round(sum(readings) / len(readings), 1) if readings else None
+        if readings:
+            result = round(sum(readings) / len(readings), 1)
+            self._last_moisture = result  # cache for startup fallback
+            return result
+        # Return last cached value when sensors are temporarily unavailable (e.g. HA startup)
+        return self._last_moisture
 
     async def _read_moisture_trend(self) -> float | None:
         sensors = self.config.get(CONF_SOIL_SENSORS, [])
@@ -527,6 +536,29 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
             _LOGGER.debug(
                 "%s: seeded last_watered from valve history: %s", self.zone_name, last_off_after_on
             )
+
+    async def _init_moisture_from_history(self) -> float | None:
+        """Seed moisture from the most recent recorder reading when sensors haven't loaded yet."""
+        sensors = self.config.get(CONF_SOIL_SENSORS, [])
+        if not sensors:
+            return None
+        from homeassistant.components.recorder import get_instance
+        from homeassistant.components.recorder.history import get_significant_states
+
+        start = dt_util.utcnow() - timedelta(hours=STALE_SENSOR_HOURS)
+        readings = []
+        for entity_id in sensors:
+            try:
+                states = await get_instance(self.hass).async_add_executor_job(
+                    get_significant_states, self.hass, start, None, [entity_id]
+                )
+                for s in reversed(states.get(entity_id, [])):
+                    if s.state not in ("unknown", "unavailable"):
+                        readings.append(float(s.state))
+                        break
+            except Exception as err:
+                _LOGGER.debug("%s: moisture history query failed for %s: %s", self.zone_name, entity_id, err)
+        return round(sum(readings) / len(readings), 1) if readings else None
 
     def _infer_trend_from_peers(self) -> float | None:
         """Average moisture trend from zones that have real soil sensors."""

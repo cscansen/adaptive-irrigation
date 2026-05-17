@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.7] - 2026-05-17
+
+### Fixed
+- **Moisture shows unknown on restart** — coordinator now seeds moisture from the recorder (most recent value within 8 h) when soil sensor entities haven't finished loading yet at HA startup. Once a live reading comes in, the cached value takes over. All four active zones now show real moisture readings immediately on restart.
+
 ## [0.6.6] - 2026-05-17
 
 ### Fixed
