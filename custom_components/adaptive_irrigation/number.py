@@ -13,16 +13,13 @@ from .const import (
     CONF_MAX_DURATION,
     CONF_SOIL_THRESHOLD,
     CONF_WATER_INTERVAL_DAYS,
-    CONF_WINDOW_END_HOUR,
-    CONF_WINDOW_START_HOUR,
     DEFAULT_DAILY_BUDGET_GALLONS,
     DEFAULT_FLOW_RATE_GPM,
     DEFAULT_MAX_DURATION,
     DEFAULT_SOIL_THRESHOLD,
     DEFAULT_WATER_INTERVAL_DAYS,
-    DEFAULT_WINDOW_END_HOUR,
-    DEFAULT_WINDOW_START_HOUR,
     DOMAIN,
+    ENTRY_TYPE_SYSTEM,
 )
 from .coordinator import AdaptiveIrrigationCoordinator
 
@@ -32,20 +29,24 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    coordinator: AdaptiveIrrigationCoordinator = hass.data[DOMAIN][entry.entry_id]
+    entry_type = entry.data.get("entry_type")
+    domain_data = hass.data.get(DOMAIN, {})
+
+    if entry_type == ENTRY_TYPE_SYSTEM:
+        async_add_entities([DailyBudgetNumber(hass, entry)])
+        return
+
+    coordinator: AdaptiveIrrigationCoordinator = domain_data[entry.entry_id]
     entities: list[NumberEntity] = [
         SoilThresholdNumber(coordinator),
         WaterIntervalNumber(coordinator),
         MaxDurationNumber(coordinator),
         FlowRateNumber(coordinator),
     ]
-    if not hass.data[DOMAIN].get("system_number_added"):
-        hass.data[DOMAIN]["system_number_added"] = True
-        entities.extend([
-            DailyBudgetNumber(hass),
-            WindowStartHourNumber(hass),
-            WindowEndHourNumber(hass),
-        ])
+    # Legacy: no system entry yet — add DailyBudgetNumber so existing installs don't lose it
+    if "system_entry_id" not in domain_data and not domain_data.get("system_number_added"):
+        domain_data["system_number_added"] = True
+        entities.append(DailyBudgetNumber(hass, None))
     async_add_entities(entities)
 
 
@@ -205,8 +206,12 @@ class DailyBudgetNumber(_SystemNumber):
     _attr_native_max_value = 5000.0
     _attr_native_step = 10.0
 
-    def __init__(self, hass) -> None:
-        super().__init__(hass, DEFAULT_DAILY_BUDGET_GALLONS)
+    def __init__(self, hass, entry=None) -> None:
+        default = DEFAULT_DAILY_BUDGET_GALLONS
+        if entry is not None:
+            default = float(entry.options.get(CONF_DAILY_BUDGET_GALLONS,
+                            entry.data.get(CONF_DAILY_BUDGET_GALLONS, DEFAULT_DAILY_BUDGET_GALLONS)))
+        super().__init__(hass, default)
 
     def _push_to_domain(self) -> None:
         self._hass.data[DOMAIN]["daily_budget_gallons"] = self._current_value

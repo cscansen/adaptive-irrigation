@@ -34,6 +34,9 @@ from .const import (
     DEFAULT_WINDOW_START_HOUR,
     DEFAULT_ZONE_TYPE,
     DOMAIN,
+    ENTRY_TYPE_SYSTEM,
+    ENTRY_TYPE_ZONE,
+    HOUR_LABELS,
     SEEDLING_DEFAULT_FALLBACK,
     SEEDLING_DEFAULT_THRESHOLD,
     ZONE_TYPE_SEEDLING,
@@ -52,6 +55,30 @@ CROP_OPTIONS = [
     selector.SelectOptionDict(value="0.6", label="Drip / trees (Kc 0.6)"),
 ]
 
+HOUR_OPTIONS = [selector.SelectOptionDict(value=HOUR_LABELS[i], label=HOUR_LABELS[i]) for i in range(24)]
+
+
+def _system_schema_dict(defaults: dict) -> dict:
+    start_default = HOUR_LABELS[int(defaults.get(CONF_WINDOW_START_HOUR, DEFAULT_WINDOW_START_HOUR))]
+    end_default   = HOUR_LABELS[int(defaults.get(CONF_WINDOW_END_HOUR,   DEFAULT_WINDOW_END_HOUR))]
+    return {
+        vol.Required(CONF_WEATHER_ENTITY, default=defaults.get(CONF_WEATHER_ENTITY, DEFAULT_WEATHER_ENTITY)): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="weather")
+        ),
+        vol.Required(CONF_WINDOW_START_HOUR, default=start_default): selector.SelectSelector(
+            selector.SelectSelectorConfig(options=HOUR_OPTIONS)
+        ),
+        vol.Required(CONF_WINDOW_END_HOUR, default=end_default): selector.SelectSelector(
+            selector.SelectSelectorConfig(options=HOUR_OPTIONS)
+        ),
+        vol.Optional(CONF_WATER_METER_ENTITY): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="sensor")
+        ),
+        vol.Optional(CONF_DAILY_BUDGET_GALLONS, default=float(defaults.get(CONF_DAILY_BUDGET_GALLONS, DEFAULT_DAILY_BUDGET_GALLONS))): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0, max=5000, step=10, unit_of_measurement="gal")
+        ),
+    }
+
 
 def _zone_schema_dict(defaults: dict) -> dict:
     zone_type = defaults.get(CONF_ZONE_TYPE, DEFAULT_ZONE_TYPE)
@@ -59,7 +86,7 @@ def _zone_schema_dict(defaults: dict) -> dict:
     default_threshold = defaults.get(CONF_SOIL_THRESHOLD, SEEDLING_DEFAULT_THRESHOLD if is_seedling else DEFAULT_SOIL_THRESHOLD)
     default_fallback = defaults.get(CONF_FALLBACK_DURATION, SEEDLING_DEFAULT_FALLBACK if is_seedling else DEFAULT_FALLBACK_DURATION)
 
-    d: dict = {
+    return {
         vol.Required(CONF_ZONE_NAME, default=defaults.get(CONF_ZONE_NAME, "")): str,
         vol.Required(CONF_ZONE_TYPE, default=zone_type): selector.SelectSelector(
             selector.SelectSelectorConfig(options=ZONE_TYPE_OPTIONS)
@@ -93,51 +120,32 @@ def _zone_schema_dict(defaults: dict) -> dict:
             selector.NumberSelectorConfig(min=15, max=240, step=15, unit_of_measurement="min")
         ),
     }
-    return d
-
-
-def _system_schema_dict(defaults: dict) -> dict:
-    return {
-        vol.Required(CONF_WEATHER_ENTITY, default=defaults.get(CONF_WEATHER_ENTITY, DEFAULT_WEATHER_ENTITY)): selector.EntitySelector(
-            selector.EntitySelectorConfig(domain="weather")
-        ),
-        vol.Optional(CONF_WINDOW_START_HOUR, default=defaults.get(CONF_WINDOW_START_HOUR, DEFAULT_WINDOW_START_HOUR)): selector.NumberSelector(
-            selector.NumberSelectorConfig(min=0, max=23, step=1, unit_of_measurement="hr")
-        ),
-        vol.Optional(CONF_WINDOW_END_HOUR, default=defaults.get(CONF_WINDOW_END_HOUR, DEFAULT_WINDOW_END_HOUR)): selector.NumberSelector(
-            selector.NumberSelectorConfig(min=1, max=23, step=1, unit_of_measurement="hr")
-        ),
-        vol.Optional(CONF_WATER_METER_ENTITY): selector.EntitySelector(
-            selector.EntitySelectorConfig(domain="sensor")
-        ),
-        vol.Optional(CONF_DAILY_BUDGET_GALLONS, default=defaults.get(CONF_DAILY_BUDGET_GALLONS, DEFAULT_DAILY_BUDGET_GALLONS)): selector.NumberSelector(
-            selector.NumberSelectorConfig(min=0, max=5000, step=10, unit_of_measurement="gal")
-        ),
-    }
 
 
 def _zone_schema(defaults: dict) -> vol.Schema:
     return vol.Schema(_zone_schema_dict(defaults))
 
 
-class AdaptiveIrrigationConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    VERSION = 1
+def _coerce_system_input(user_input: dict) -> dict:
+    """Convert window hour labels back to integers before storing."""
+    data = dict(user_input)
+    if CONF_WINDOW_START_HOUR in data:
+        val = data[CONF_WINDOW_START_HOUR]
+        data[CONF_WINDOW_START_HOUR] = HOUR_LABELS.index(val) if val in HOUR_LABELS else int(val)
+    if CONF_WINDOW_END_HOUR in data:
+        val = data[CONF_WINDOW_END_HOUR]
+        data[CONF_WINDOW_END_HOUR] = HOUR_LABELS.index(val) if val in HOUR_LABELS else int(val)
+    return data
 
-    def __init__(self) -> None:
-        self._weather_entity: str = DEFAULT_WEATHER_ENTITY
-        self._system_input: dict = {}
+
+class AdaptiveIrrigationConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    VERSION = 2
 
     async def async_step_user(self, user_input=None):
         existing = self.hass.config_entries.async_entries(DOMAIN)
-        if existing:
-            # Inherit weather entity from an existing zone entry
-            for entry in existing:
-                w = entry.data.get(CONF_WEATHER_ENTITY) or entry.options.get(CONF_WEATHER_ENTITY)
-                if w:
-                    self._weather_entity = w
-                    break
+        has_system = any(e.data.get("entry_type") == ENTRY_TYPE_SYSTEM for e in existing)
+        if has_system:
             return await self.async_step_zone()
-        # First zone ever — ask for weather source first
         return await self.async_step_system()
 
     async def async_step_system(self, user_input=None):
@@ -147,13 +155,15 @@ class AdaptiveIrrigationConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not self.hass.states.get(weather):
                 errors[CONF_WEATHER_ENTITY] = "weather_entity_not_found"
             else:
-                self._weather_entity = weather
-                self._system_input = user_input
-                return await self.async_step_zone()
+                coerced = _coerce_system_input(user_input)
+                return self.async_create_entry(
+                    title="Configuration",
+                    data={"entry_type": ENTRY_TYPE_SYSTEM, **coerced},
+                )
 
         return self.async_show_form(
             step_id="system",
-            data_schema=vol.Schema(_system_schema_dict({CONF_WEATHER_ENTITY: self._weather_entity})),
+            data_schema=vol.Schema(_system_schema_dict({})),
             errors=errors,
         )
 
@@ -164,18 +174,12 @@ class AdaptiveIrrigationConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not zone:
                 errors[CONF_ZONE_NAME] = "zone_name_required"
             else:
-                await self.async_set_unique_id(f"{DOMAIN}_{zone}")
+                await self.async_set_unique_id(f"{DOMAIN}_zone_{zone}")
                 self._abort_if_unique_id_configured()
-                # Store weather entity + global settings only on the first zone entry
-                existing = self.hass.config_entries.async_entries(DOMAIN)
-                data = dict(user_input)
-                if not existing:
-                    data[CONF_WEATHER_ENTITY] = self._weather_entity
-                    if CONF_WATER_METER_ENTITY in self._system_input:
-                        data[CONF_WATER_METER_ENTITY] = self._system_input[CONF_WATER_METER_ENTITY]
-                    if CONF_DAILY_BUDGET_GALLONS in self._system_input:
-                        data[CONF_DAILY_BUDGET_GALLONS] = self._system_input[CONF_DAILY_BUDGET_GALLONS]
-                return self.async_create_entry(title=zone, data=data)
+                return self.async_create_entry(
+                    title=zone,
+                    data={"entry_type": ENTRY_TYPE_ZONE, **user_input},
+                )
 
         return self.async_show_form(
             step_id="zone",
@@ -185,45 +189,53 @@ class AdaptiveIrrigationConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     @staticmethod
     def async_get_options_flow(config_entry):
-        return AdaptiveIrrigationOptionsFlow(config_entry)
+        if config_entry.data.get("entry_type") == ENTRY_TYPE_SYSTEM:
+            return SystemOptionsFlow(config_entry)
+        return ZoneOptionsFlow(config_entry)
 
 
-class AdaptiveIrrigationOptionsFlow(config_entries.OptionsFlow):
+class SystemOptionsFlow(config_entries.OptionsFlow):
     def __init__(self, entry: config_entries.ConfigEntry) -> None:
         self._entry = entry
 
     async def async_step_init(self, user_input=None):
-        is_primary = CONF_WEATHER_ENTITY in self._entry.data or CONF_WEATHER_ENTITY in self._entry.options
         defaults = {**self._entry.data, **self._entry.options}
         errors: dict = {}
 
         if user_input is not None:
-            if is_primary:
-                weather = user_input.get(CONF_WEATHER_ENTITY, defaults.get(CONF_WEATHER_ENTITY, DEFAULT_WEATHER_ENTITY))
-                if not self.hass.states.get(weather):
-                    errors[CONF_WEATHER_ENTITY] = "weather_entity_not_found"
-                else:
-                    domain_data = self.hass.data.setdefault(DOMAIN, {})
-                    domain_data["weather_entity"] = weather
-                    meter = user_input.get(CONF_WATER_METER_ENTITY)
-                    if meter:
-                        domain_data["water_meter_entity"] = meter
-                    budget = user_input.get(CONF_DAILY_BUDGET_GALLONS)
-                    if budget is not None:
-                        domain_data["daily_budget_gallons"] = float(budget)
-            if not errors:
-                return self.async_create_entry(title="", data=user_input)
-
-        if is_primary:
-            schema = vol.Schema({
-                **_system_schema_dict(defaults),
-                **_zone_schema_dict(defaults),
-            })
-        else:
-            schema = _zone_schema(defaults)
+            weather = user_input.get(CONF_WEATHER_ENTITY, defaults.get(CONF_WEATHER_ENTITY, DEFAULT_WEATHER_ENTITY))
+            if not self.hass.states.get(weather):
+                errors[CONF_WEATHER_ENTITY] = "weather_entity_not_found"
+            else:
+                coerced = _coerce_system_input(user_input)
+                domain_data = self.hass.data.setdefault(DOMAIN, {})
+                domain_data["weather_entity"] = coerced[CONF_WEATHER_ENTITY]
+                domain_data["window_start_hour"] = coerced[CONF_WINDOW_START_HOUR]
+                domain_data["window_end_hour"]   = coerced[CONF_WINDOW_END_HOUR]
+                meter = coerced.get(CONF_WATER_METER_ENTITY, "")
+                if meter:
+                    domain_data["water_meter_entity"] = meter
+                budget = coerced.get(CONF_DAILY_BUDGET_GALLONS)
+                if budget is not None:
+                    domain_data["daily_budget_gallons"] = float(budget)
+                return self.async_create_entry(title="", data=coerced)
 
         return self.async_show_form(
             step_id="init",
-            data_schema=schema,
+            data_schema=vol.Schema(_system_schema_dict(defaults)),
             errors=errors,
+        )
+
+
+class ZoneOptionsFlow(config_entries.OptionsFlow):
+    def __init__(self, entry: config_entries.ConfigEntry) -> None:
+        self._entry = entry
+
+    async def async_step_init(self, user_input=None):
+        defaults = {**self._entry.data, **self._entry.options}
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+        return self.async_show_form(
+            step_id="init",
+            data_schema=_zone_schema(defaults),
         )

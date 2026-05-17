@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.5] - 2026-05-17
+
+### Changed
+- **Dedicated Configuration entry** — System settings now live in their own "Configuration" config entry (separate from any zone). It appears as its own item in Settings → Integrations with a dedicated Configure button. First time adding the integration creates this entry; subsequent "Add Integration" clicks add zones.
+- **Configuration is now editable** — The Configuration entry's options flow lets you change weather entity, watering window, water meter, and daily budget independently of any zone.
+- **Watering window shows as times** — Window Start and Window End are now dropdown selects showing "5:00 AM" / "10:00 AM" style labels instead of the confusing "5 hr" / "10 hr" number sliders.
+- Config entry migration (v1 → v2) tags all existing zone entries automatically on startup.
+
 ## [0.6.4] - 2026-05-17
 
 ### Changed

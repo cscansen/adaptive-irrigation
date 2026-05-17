@@ -11,7 +11,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util.dt import parse_datetime
 
-from .const import DEFAULT_WEATHER_ENTITY, DOMAIN
+from .const import DEFAULT_WEATHER_ENTITY, DOMAIN, ENTRY_TYPE_SYSTEM
 from .coordinator import AdaptiveIrrigationCoordinator
 
 _CONFIG_DEVICE = {
@@ -28,7 +28,14 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    coordinator: AdaptiveIrrigationCoordinator = hass.data[DOMAIN][entry.entry_id]
+    entry_type = entry.data.get("entry_type")
+    domain_data = hass.data.get(DOMAIN, {})
+
+    if entry_type == ENTRY_TYPE_SYSTEM:
+        async_add_entities([DailyUsedSensor(hass), WeatherSourceSensor(hass)])
+        return
+
+    coordinator: AdaptiveIrrigationCoordinator = domain_data[entry.entry_id]
     zone = coordinator.zone_name
     entities = [
         MoistureSensor(coordinator, zone),
@@ -40,8 +47,9 @@ async def async_setup_entry(
         LastWateredSensor(coordinator, zone),
         CalibrationSensor(coordinator, zone),
     ]
-    if not hass.data[DOMAIN].get("system_sensor_added"):
-        hass.data[DOMAIN]["system_sensor_added"] = True
+    # Legacy backward-compat
+    if "system_entry_id" not in domain_data and not domain_data.get("system_sensor_added"):
+        domain_data["system_sensor_added"] = True
         entities.extend([DailyUsedSensor(hass), WeatherSourceSensor(hass)])
     async_add_entities(entities)
 

@@ -7,7 +7,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_ZONE_TYPE, DEFAULT_ZONE_TYPE, DOMAIN, ZONE_TYPE_SEEDLING
+from .const import CONF_ZONE_TYPE, DEFAULT_ZONE_TYPE, DOMAIN, ENTRY_TYPE_SYSTEM, ZONE_TYPE_SEEDLING
 from .coordinator import AdaptiveIrrigationCoordinator
 
 
@@ -16,15 +16,22 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    coordinator: AdaptiveIrrigationCoordinator = hass.data[DOMAIN][entry.entry_id]
+    entry_type = entry.data.get("entry_type")
+    domain_data = hass.data.get(DOMAIN, {})
+
+    if entry_type == ENTRY_TYPE_SYSTEM:
+        async_add_entities([AdaptiveIrrigationMasterSwitch(), WaterRestrictionSwitch()])
+        return
+
+    coordinator: AdaptiveIrrigationCoordinator = domain_data[entry.entry_id]
     entities: list[SwitchEntity] = [
         AdaptiveIrrigationZoneSwitch(coordinator),
         SeedlingModeSwitch(coordinator),
     ]
-    if not hass.data[DOMAIN].get("master_switch_added"):
-        hass.data[DOMAIN]["master_switch_added"] = True
-        entities.append(AdaptiveIrrigationMasterSwitch())
-        entities.append(WaterRestrictionSwitch())
+    # Legacy backward-compat
+    if "system_entry_id" not in domain_data and not domain_data.get("master_switch_added"):
+        domain_data["master_switch_added"] = True
+        entities.extend([AdaptiveIrrigationMasterSwitch(), WaterRestrictionSwitch()])
     async_add_entities(entities)
 
 
