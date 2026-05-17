@@ -61,6 +61,7 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
         self._watering_lock = asyncio.Lock()
         self._soil_before: float | None = None
         self._last_duration: int = 0
+        self._startup_poll_done: bool = False  # first poll skips watering; entities restore before second
 
     # --- Entity callbacks (called after restore) ---
 
@@ -91,6 +92,12 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
 
         if not self._auto_enabled:
             return {**base, "status": "Disabled"}
+
+        # Skip watering decisions on the very first poll — entities haven't restored
+        # last_watered / calibration yet (restore happens after first_refresh completes)
+        if not self._startup_poll_done:
+            self._startup_poll_done = True
+            return {**base, "status": "Idle"}
 
         # Seedling mode: only evaluate during the 4 daily time windows
         if self.config.get(CONF_ZONE_TYPE, DEFAULT_ZONE_TYPE) == ZONE_TYPE_SEEDLING:

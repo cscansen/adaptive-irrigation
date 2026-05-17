@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.4.1] - 2026-05-17
+
+### Fixed
+- Spurious "zone ran" notification on HA restart: `async_config_entry_first_refresh` fires before entity restore completes, so `last_watered` was always `None` on the first poll — bypassing the startup guard and potentially triggering a false watering decision. First poll now skips all watering decisions and returns `Idle`; entities restore before the second poll 15 min later.
+
 ## [0.4.0] - 2026-05-17
 
 ### Added
