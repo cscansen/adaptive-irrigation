@@ -6,7 +6,14 @@ from homeassistant.core import HomeAssistant
 
 from homeassistant.util import dt as dt_util
 
-from .const import CONF_DAILY_BUDGET_GALLONS, CONF_WATER_METER_ENTITY, CONF_WEATHER_ENTITY, DOMAIN
+from .const import (
+    CONF_DAILY_BUDGET_GALLONS,
+    CONF_WATER_METER_ENTITY,
+    CONF_WEATHER_ENTITY,
+    DEFAULT_WINDOW_END_HOUR,
+    DEFAULT_WINDOW_START_HOUR,
+    DOMAIN,
+)
 from .coordinator import AdaptiveIrrigationCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -34,6 +41,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     domain_data.setdefault("daily_used_gallons", 0.0)
     domain_data.setdefault("budget_date", dt_util.now().date().isoformat())
     domain_data.setdefault("water_restriction", False)
+    domain_data.setdefault("window_start_hour", DEFAULT_WINDOW_START_HOUR)
+    domain_data.setdefault("window_end_hour", DEFAULT_WINDOW_END_HOUR)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
     _register_services(hass)

@@ -80,8 +80,6 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
         self._live_threshold: float | None = None
         self._live_water_interval_days: int | None = None
         self._live_max_duration: int | None = None
-        self._live_window_start_hour: int | None = None
-        self._live_window_end_hour: int | None = None
         self._live_flow_rate: float | None = None
 
     # --- Effective-value properties (live entity overrides config) ---
@@ -112,15 +110,11 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
 
     @property
     def _effective_window_start_hour(self) -> int:
-        if self._live_window_start_hour is not None:
-            return self._live_window_start_hour
-        return int(self.config.get(CONF_WINDOW_START_HOUR, DEFAULT_WINDOW_START_HOUR))
+        return int(self.hass.data.get(DOMAIN, {}).get("window_start_hour", DEFAULT_WINDOW_START_HOUR))
 
     @property
     def _effective_window_end_hour(self) -> int:
-        if self._live_window_end_hour is not None:
-            return self._live_window_end_hour
-        return int(self.config.get(CONF_WINDOW_END_HOUR, DEFAULT_WINDOW_END_HOUR))
+        return int(self.hass.data.get(DOMAIN, {}).get("window_end_hour", DEFAULT_WINDOW_END_HOUR))
 
     @property
     def _effective_flow_rate(self) -> float:
@@ -150,12 +144,6 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
 
     def set_live_max_duration(self, value: int) -> None:
         self._live_max_duration = value
-
-    def set_live_window_start_hour(self, value: int) -> None:
-        self._live_window_start_hour = value
-
-    def set_live_window_end_hour(self, value: int) -> None:
-        self._live_window_end_hour = value
 
     def set_live_flow_rate(self, value: float) -> None:
         self._live_flow_rate = value

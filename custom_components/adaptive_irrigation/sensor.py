@@ -11,8 +11,14 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util.dt import parse_datetime
 
-from .const import DOMAIN
+from .const import DEFAULT_WEATHER_ENTITY, DOMAIN
 from .coordinator import AdaptiveIrrigationCoordinator
+
+_CONFIG_DEVICE = {
+    "identifiers": {(DOMAIN, "configuration")},
+    "name": "Configuration",
+    "manufacturer": "adaptive_irrigation",
+}
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -36,7 +42,7 @@ async def async_setup_entry(
     ]
     if not hass.data[DOMAIN].get("system_sensor_added"):
         hass.data[DOMAIN]["system_sensor_added"] = True
-        entities.append(DailyUsedSensor(hass))
+        entities.extend([DailyUsedSensor(hass), WeatherSourceSensor(hass)])
     async_add_entities(entities)
 
 
@@ -197,11 +203,7 @@ class DailyUsedSensor(SensorEntity):
 
     @property
     def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, "system")},
-            "name": "Adaptive Irrigation",
-            "manufacturer": "adaptive_irrigation",
-        }
+        return _CONFIG_DEVICE
 
     @property
     def native_value(self) -> float:
@@ -217,3 +219,23 @@ class DailyUsedSensor(SensorEntity):
                 except ValueError:
                     pass
         return round(domain_data.get("daily_used_gallons", 0.0), 1)
+
+
+class WeatherSourceSensor(SensorEntity):
+    """Shows which weather entity the integration is currently using."""
+
+    _attr_unique_id = "adaptive_irrigation_weather_source"
+    _attr_name = "Weather Source"
+    _attr_icon = "mdi:weather-partly-cloudy"
+    _attr_has_entity_name = False
+
+    def __init__(self, hass) -> None:
+        self._hass = hass
+
+    @property
+    def device_info(self):
+        return _CONFIG_DEVICE
+
+    @property
+    def native_value(self) -> str:
+        return self._hass.data.get(DOMAIN, {}).get("weather_entity", DEFAULT_WEATHER_ENTITY)

@@ -18,6 +18,8 @@ from .const import (
     CONF_WATER_INTERVAL_DAYS,
     CONF_WATER_METER_ENTITY,
     CONF_WEATHER_ENTITY,
+    CONF_WINDOW_END_HOUR,
+    CONF_WINDOW_START_HOUR,
     CONF_ZONE_NAME,
     CONF_ZONE_TYPE,
     DEFAULT_CROP_COEFFICIENT,
@@ -28,6 +30,8 @@ from .const import (
     DEFAULT_SOIL_THRESHOLD,
     DEFAULT_WATER_INTERVAL_DAYS,
     DEFAULT_WEATHER_ENTITY,
+    DEFAULT_WINDOW_END_HOUR,
+    DEFAULT_WINDOW_START_HOUR,
     DEFAULT_ZONE_TYPE,
     DOMAIN,
     SEEDLING_DEFAULT_FALLBACK,
@@ -92,6 +96,26 @@ def _zone_schema_dict(defaults: dict) -> dict:
     return d
 
 
+def _system_schema_dict(defaults: dict) -> dict:
+    return {
+        vol.Required(CONF_WEATHER_ENTITY, default=defaults.get(CONF_WEATHER_ENTITY, DEFAULT_WEATHER_ENTITY)): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="weather")
+        ),
+        vol.Optional(CONF_WINDOW_START_HOUR, default=defaults.get(CONF_WINDOW_START_HOUR, DEFAULT_WINDOW_START_HOUR)): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0, max=23, step=1, unit_of_measurement="hr")
+        ),
+        vol.Optional(CONF_WINDOW_END_HOUR, default=defaults.get(CONF_WINDOW_END_HOUR, DEFAULT_WINDOW_END_HOUR)): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=1, max=23, step=1, unit_of_measurement="hr")
+        ),
+        vol.Optional(CONF_WATER_METER_ENTITY): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="sensor")
+        ),
+        vol.Optional(CONF_DAILY_BUDGET_GALLONS, default=defaults.get(CONF_DAILY_BUDGET_GALLONS, DEFAULT_DAILY_BUDGET_GALLONS)): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0, max=5000, step=10, unit_of_measurement="gal")
+        ),
+    }
+
+
 def _zone_schema(defaults: dict) -> vol.Schema:
     return vol.Schema(_zone_schema_dict(defaults))
 
@@ -129,17 +153,7 @@ class AdaptiveIrrigationConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="system",
-            data_schema=vol.Schema({
-                vol.Required(CONF_WEATHER_ENTITY, default=self._weather_entity): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="weather")
-                ),
-                vol.Optional(CONF_WATER_METER_ENTITY): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
-                ),
-                vol.Optional(CONF_DAILY_BUDGET_GALLONS, default=DEFAULT_DAILY_BUDGET_GALLONS): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=0, max=5000, step=10, unit_of_measurement="gal")
-                ),
-            }),
+            data_schema=vol.Schema(_system_schema_dict({CONF_WEATHER_ENTITY: self._weather_entity})),
             errors=errors,
         )
 
@@ -202,15 +216,7 @@ class AdaptiveIrrigationOptionsFlow(config_entries.OptionsFlow):
 
         if is_primary:
             schema = vol.Schema({
-                vol.Required(CONF_WEATHER_ENTITY, default=defaults.get(CONF_WEATHER_ENTITY, DEFAULT_WEATHER_ENTITY)): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="weather")
-                ),
-                vol.Optional(CONF_WATER_METER_ENTITY, default=defaults.get(CONF_WATER_METER_ENTITY, "")): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
-                ),
-                vol.Optional(CONF_DAILY_BUDGET_GALLONS, default=defaults.get(CONF_DAILY_BUDGET_GALLONS, DEFAULT_DAILY_BUDGET_GALLONS)): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=0, max=5000, step=10, unit_of_measurement="gal")
-                ),
+                **_system_schema_dict(defaults),
                 **_zone_schema_dict(defaults),
             })
         else:

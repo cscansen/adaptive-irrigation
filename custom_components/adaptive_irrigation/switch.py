@@ -130,8 +130,8 @@ class AdaptiveIrrigationMasterSwitch(RestoreEntity, SwitchEntity):
     @property
     def device_info(self):
         return {
-            "identifiers": {(DOMAIN, "system")},
-            "name": "Adaptive Irrigation",
+            "identifiers": {(DOMAIN, "configuration")},
+            "name": "Configuration",
             "manufacturer": "adaptive_irrigation",
         }
 
@@ -171,8 +171,8 @@ class WaterRestrictionSwitch(RestoreEntity, SwitchEntity):
     @property
     def device_info(self):
         return {
-            "identifiers": {(DOMAIN, "system")},
-            "name": "Adaptive Irrigation",
+            "identifiers": {(DOMAIN, "configuration")},
+            "name": "Configuration",
             "manufacturer": "adaptive_irrigation",
         }
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.4] - 2026-05-17
+
+### Changed
+- **Configuration device** — all system-level controls now live on a dedicated `Configuration` device instead of being scattered under zone devices. The device contains: Weather Source (sensor), Watering Window Start/End (numbers), Daily Water Budget (number), Daily Water Used (sensor), System Active (switch), Water Restriction (switch).
+- **Watering window is now system-wide** — Window Start and Window End moved from per-zone number entities to the Configuration device. One window applies to all zones. Existing window settings restore from HA state automatically.
+- **Weather Source sensor** added to Configuration device — shows which weather entity the integration is currently reading from.
+
 ## [0.6.3] - 2026-05-17
 
 ### Added

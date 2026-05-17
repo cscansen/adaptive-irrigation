@@ -37,13 +37,15 @@ async def async_setup_entry(
         SoilThresholdNumber(coordinator),
         WaterIntervalNumber(coordinator),
         MaxDurationNumber(coordinator),
-        WindowStartHourNumber(coordinator),
-        WindowEndHourNumber(coordinator),
         FlowRateNumber(coordinator),
     ]
     if not hass.data[DOMAIN].get("system_number_added"):
         hass.data[DOMAIN]["system_number_added"] = True
-        entities.append(DailyBudgetNumber(hass))
+        entities.extend([
+            DailyBudgetNumber(hass),
+            WindowStartHourNumber(hass),
+            WindowEndHourNumber(hass),
+        ])
     async_add_entities(entities)
 
 
@@ -137,26 +139,6 @@ class MaxDurationNumber(_ZoneNumber):
         self.coordinator.set_live_max_duration(int(self._current_value))
 
 
-class WindowStartHourNumber(_ZoneNumber):
-    _attr_icon = "mdi:clock-start"
-
-    def __init__(self, coordinator: AdaptiveIrrigationCoordinator) -> None:
-        default = coordinator.config.get(CONF_WINDOW_START_HOUR, DEFAULT_WINDOW_START_HOUR)
-        super().__init__(coordinator, "window_start_hour", "Watering Window Start", "hr", 0.0, 23.0, 1.0, default)
-
-    def _push_to_coordinator(self) -> None:
-        self.coordinator.set_live_window_start_hour(int(self._current_value))
-
-
-class WindowEndHourNumber(_ZoneNumber):
-    _attr_icon = "mdi:clock-end"
-
-    def __init__(self, coordinator: AdaptiveIrrigationCoordinator) -> None:
-        default = coordinator.config.get(CONF_WINDOW_END_HOUR, DEFAULT_WINDOW_END_HOUR)
-        super().__init__(coordinator, "window_end_hour", "Watering Window End", "hr", 1.0, 23.0, 1.0, default)
-
-    def _push_to_coordinator(self) -> None:
-        self.coordinator.set_live_window_end_hour(int(self._current_value))
 
 
 class FlowRateNumber(_ZoneNumber):
@@ -170,30 +152,26 @@ class FlowRateNumber(_ZoneNumber):
         self.coordinator.set_live_flow_rate(self._current_value)
 
 
-class DailyBudgetNumber(RestoreEntity, NumberEntity):
-    """System-level daily water budget — not tied to a zone coordinator."""
+_CONFIG_DEVICE = {
+    "identifiers": {(DOMAIN, "configuration")},
+    "name": "Configuration",
+    "manufacturer": "adaptive_irrigation",
+}
+
+
+class _SystemNumber(RestoreEntity, NumberEntity):
+    """Base for system-level number entities that live on the Configuration device."""
 
     _attr_mode = NumberMode.SLIDER
-    _attr_icon = "mdi:water-percent"
-    _attr_unique_id = "adaptive_irrigation_daily_budget"
     _attr_has_entity_name = False
-    _attr_name = "Daily Water Budget"
-    _attr_native_unit_of_measurement = "gal"
-    _attr_native_min_value = 0.0
-    _attr_native_max_value = 5000.0
-    _attr_native_step = 10.0
 
-    def __init__(self, hass) -> None:
+    def __init__(self, hass, default: float) -> None:
         self._hass = hass
-        self._current_value: float = DEFAULT_DAILY_BUDGET_GALLONS
+        self._current_value: float = default
 
     @property
     def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, "system")},
-            "name": "Adaptive Irrigation",
-            "manufacturer": "adaptive_irrigation",
-        }
+        return _CONFIG_DEVICE
 
     @property
     def native_value(self) -> float:
@@ -207,9 +185,60 @@ class DailyBudgetNumber(RestoreEntity, NumberEntity):
                 self._current_value = float(last.state)
             except ValueError:
                 pass
-        self._hass.data[DOMAIN]["daily_budget_gallons"] = self._current_value
+        self._push_to_domain()
+
+    def _push_to_domain(self) -> None:
+        raise NotImplementedError
 
     async def async_set_native_value(self, value: float) -> None:
         self._current_value = value
-        self._hass.data[DOMAIN]["daily_budget_gallons"] = value
+        self._push_to_domain()
         self.async_write_ha_state()
+
+
+class DailyBudgetNumber(_SystemNumber):
+    _attr_icon = "mdi:water-percent"
+    _attr_unique_id = "adaptive_irrigation_daily_budget"
+    _attr_name = "Daily Water Budget"
+    _attr_native_unit_of_measurement = "gal"
+    _attr_native_min_value = 0.0
+    _attr_native_max_value = 5000.0
+    _attr_native_step = 10.0
+
+    def __init__(self, hass) -> None:
+        super().__init__(hass, DEFAULT_DAILY_BUDGET_GALLONS)
+
+    def _push_to_domain(self) -> None:
+        self._hass.data[DOMAIN]["daily_budget_gallons"] = self._current_value
+
+
+class WindowStartHourNumber(_SystemNumber):
+    _attr_icon = "mdi:clock-start"
+    _attr_unique_id = "adaptive_irrigation_window_start_hour"
+    _attr_name = "Watering Window Start"
+    _attr_native_unit_of_measurement = "hr"
+    _attr_native_min_value = 0.0
+    _attr_native_max_value = 23.0
+    _attr_native_step = 1.0
+
+    def __init__(self, hass) -> None:
+        super().__init__(hass, float(DEFAULT_WINDOW_START_HOUR))
+
+    def _push_to_domain(self) -> None:
+        self._hass.data[DOMAIN]["window_start_hour"] = int(self._current_value)
+
+
+class WindowEndHourNumber(_SystemNumber):
+    _attr_icon = "mdi:clock-end"
+    _attr_unique_id = "adaptive_irrigation_window_end_hour"
+    _attr_name = "Watering Window End"
+    _attr_native_unit_of_measurement = "hr"
+    _attr_native_min_value = 1.0
+    _attr_native_max_value = 23.0
+    _attr_native_step = 1.0
+
+    def __init__(self, hass) -> None:
+        super().__init__(hass, float(DEFAULT_WINDOW_END_HOUR))
+
+    def _push_to_domain(self) -> None:
+        self._hass.data[DOMAIN]["window_end_hour"] = int(self._current_value)
