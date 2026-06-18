@@ -284,10 +284,24 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
                 self._valve_seen_on = True
                 return {**base, "status": "Idle — valve currently running"}
             if self._valve_seen_on:
-                valve_age_min = (dt_util.utcnow() - valve_state.last_changed).total_seconds() / 60
-                if valve_age_min < min_interval:
-                    return {**base, "status": f"Idle — valve ran {int(valve_age_min)} min ago"}
-                self._valve_seen_on = False  # interval cleared; reset for next cycle
+                valve_closed_at = valve_state.last_changed
+                # Allow re-evaluation once every configured soil sensor has reported
+                # at least one reading after the valve closed. This naturally gates
+                # re-watering to one poll cycle (≈15 min) without a fixed timer,
+                # and still allows multiple runs in the same window when soil is dry.
+                sensors = self.config.get(CONF_SOIL_SENSORS, [])
+                sensor_polled_since_close = any(
+                    (s := self.hass.states.get(eid)) is not None
+                    and s.last_updated > valve_closed_at
+                    for eid in sensors
+                ) if sensors else (
+                    # Sensor-free zones: fall back to a single poll interval (15 min)
+                    (dt_util.utcnow() - valve_closed_at).total_seconds() / 60 >= 15
+                )
+                if not sensor_polled_since_close:
+                    elapsed = int((dt_util.utcnow() - valve_closed_at).total_seconds() / 60)
+                    return {**base, "status": f"Idle — waiting for sensor poll after watering ({elapsed} min ago)"}
+                self._valve_seen_on = False  # sensor has polled; reset for next cycle
 
         # Motion check
         motion_entity = self.config.get(CONF_MOTION_SENSOR)

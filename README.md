@@ -37,7 +37,7 @@ A Home Assistant custom integration that makes soil-moisture-aware, weather-info
 | Crop coefficient (Kc) | Scales reference ET for zone type | 0.8 (lawn) |
 | Sensor required | Disable for drip zones with no soil sensor | on |
 | Water interval days | Sensor-free zones: base days between waterings; also early-waters if peers are drying > 0.3%/h and half the interval has passed | 3 |
-| Min interval | Prevent re-watering within this window | 45 min |
+| Min interval | *(removed — replaced by sensor-poll guard)* | — |
 
 ## Entities
 
@@ -75,11 +75,25 @@ data:
 ```
 
 ### `adaptive_irrigation.evaluate_now`
-Force an immediate watering evaluation outside the 15-minute poll cycle.
+Force an immediate watering evaluation outside the 15-minute poll cycle. Also available as per-zone buttons on the Irrigation dashboard.
 ```yaml
 service: adaptive_irrigation.evaluate_now
 data:
   zone_id: east
+```
+
+### `adaptive_irrigation.calibration_status`
+Post a persistent notification with a full calibration debug dump for all zones: current rate, data source (Store vs not yet computed), current soil, last watering context, and projected rate if the followup ran right now.
+```yaml
+service: adaptive_irrigation.calibration_status
+```
+
+### `adaptive_irrigation.force_calibration`
+Manually trigger the calibration followup for a zone using the current soil reading. Use immediately after a manual watering run to seed calibration data without waiting for the next automatic cycle.
+```yaml
+service: adaptive_irrigation.force_calibration
+data:
+  zone_id: yard_west
 ```
 
 ## Decision Logic
@@ -87,7 +101,7 @@ data:
 Each poll cycle (every 15 min) per zone:
 
 1. Auto watering switch off → skip
-2. Watered within `min_interval` OR valve ran recently (any source) OR valve currently ON → skip
+2. Valve currently ON → skip; valve recently closed → wait until soil sensor reports a new reading after close (sensor-free zones: 15-min flat wait)
 3. **Seedling zones only**: outside a 06:00 / 10:00 / 14:00 / 18:00 (±30 min) window → skip
 4. Motion detected → defer (notify)
 5. Wind > 25 mph → defer (notify)
@@ -127,7 +141,7 @@ If the zone is skipping when the soil feels dry, raise the threshold. If it's wa
 
 The integration is safe to run in parallel with existing automations during a pilot. Two guards prevent double-watering:
 
-1. **Internal guard** — skips if the integration itself watered within `min_interval` minutes
-2. **Valve guard** — checks the valve switch's `last_changed` timestamp; skips if the valve was run by *any* source (including other automations) within `min_interval` minutes; also skips if the valve is currently ON
+1. **Sensor-poll guard** — after any watering (by the integration or any other source), re-evaluation is blocked until the soil sensor reports a fresh reading after the valve closed. This naturally gates re-watering to one poll cycle (~15 min) while still allowing multiple runs in the same window when soil is genuinely dry.
+2. **Valve guard** — also skips if the valve is currently ON (regardless of who opened it).
 
 Recommended pilot sequence: enable east zone, observe for 2 weeks, then expand one zone at a time and disable the corresponding legacy automation actions.

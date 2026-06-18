@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.7.2] - 2026-06-18
+
+### Changed
+- **Recency guard now waits for a sensor poll, not a fixed timer** — after a zone
+  waters, re-evaluation is blocked until at least one soil sensor reports a reading
+  with a timestamp after the valve closed, rather than waiting a fixed `min_interval`
+  minutes. This means the zone can re-water in the same morning window if soil is
+  still below threshold after the next 15-minute sensor poll — important after
+  skipped days when the yard needs multiple runs to recover. Sensor-free zones fall
+  back to a flat 15-minute wait (one poll cycle). Status during the wait reads
+  `Idle — waiting for sensor poll after watering (N min ago)`.
+- **Dashboard: Evaluate Now buttons added** — a 2-column grid card sits below the
+  System card with per-zone Evaluate Now buttons and a Calibration Status button,
+  matching the HVAC dashboard pattern.
+
 ## [0.7.1] - 2026-06-18
 
 ### Fixed
