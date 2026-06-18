@@ -1,7 +1,7 @@
 {
   "domain": "adaptive_irrigation",
   "name": "Adaptive Irrigation",
-  "version": "0.6.9",
+  "version": "0.7.1",
   "requirements": [],
   "dependencies": ["recorder"],
   "codeowners": ["@cscansen"],

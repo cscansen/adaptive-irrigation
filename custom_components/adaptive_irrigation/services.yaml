@@ -28,3 +28,24 @@ evaluate_now:
       required: true
       selector:
         text:
+
+force_calibration:
+  name: Force Calibration Check
+  description: >
+    Manually trigger the calibration followup for a zone right now using the
+    current soil reading. Use this after a manual watering run to immediately
+    see whether the sensor detected a moisture rise. Check HA logs for the result.
+  fields:
+    zone_id:
+      name: Zone ID
+      description: The zone name as configured (e.g. "yard_west").
+      required: true
+      selector:
+        text:
+
+calibration_status:
+  name: Calibration Status
+  description: >
+    Post a persistent notification with calibration debug info for all zones:
+    current rate, source (Store vs RestoreEntity), current soil, last watering
+    context, and a projected rate if the followup ran right now.

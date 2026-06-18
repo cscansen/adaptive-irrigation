@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_call_later
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
@@ -70,11 +71,14 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
         self._last_watered: datetime | None = None
         self._last_moisture: float | None = None
         self._calibration: float | None = None
+        self._calibration_from_store: bool = False  # True once Store has loaded a value
         self._watering_lock = asyncio.Lock()
         self._soil_before: float | None = None
         self._last_duration: int = 0
         self._startup_poll_done: bool = False  # first poll skips watering; entities restore before second
         self._valve_seen_on: bool = False  # only True after we observe valve==on in this HA session
+
+        self._store = Store(hass, 1, f"{DOMAIN}_{entry.entry_id}_calibration")
 
         # Live-tunable values — None means fall back to config
         self._seedling_mode: bool | None = None
@@ -137,7 +141,25 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
     def set_last_watered(self, dt: datetime | None) -> None:
         self._last_watered = dt
 
+    async def async_load_from_store(self) -> None:
+        """Load persisted calibration from HA storage. Called before first_refresh."""
+        stored = await self._store.async_load()
+        if stored and stored.get("calibration") is not None:
+            self._calibration = float(stored["calibration"])
+            self._calibration_from_store = True
+            _LOGGER.info(
+                "%s: calibration loaded from store: %.4f %%/min",
+                self.zone_name, self._calibration,
+            )
+
+    async def _persist_calibration(self) -> None:
+        """Write current calibration to HA storage."""
+        await self._store.async_save({"calibration": self._calibration})
+
     def set_calibration(self, rate: float | None) -> None:
+        # Store takes priority — don't let RestoreEntity overwrite a store-loaded value.
+        if self._calibration_from_store:
+            return
         self._calibration = rate
 
     def set_seedling_mode(self, enabled: bool) -> None:
@@ -255,6 +277,8 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
         # Only apply recency check if we saw the valve go ON in this HA session —
         # avoids false positives from the unavailable→off transition at startup.
         valve_state = self.hass.states.get(self.config[CONF_VALVE_SWITCH])
+        if valve_state and valve_state.state == "unavailable":
+            return {**base, "status": "Skipped — valve unavailable (Yardian offline?)"}
         if valve_state:
             if valve_state.state == "on":
                 self._valve_seen_on = True
@@ -337,6 +361,11 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
 
     async def _water_zone(self, duration_min: int, soil_before: float | None, reason: str) -> None:
         valve = self.config[CONF_VALVE_SWITCH]
+        valve_state = self.hass.states.get(valve)
+        if valve_state is None or valve_state.state == "unavailable":
+            _LOGGER.warning("%s: valve %s is %s — skipping watering", self.zone_name, valve,
+                            "not found" if valve_state is None else "unavailable")
+            return
         zone_label = self.zone_name.replace("_", " ").title()
         async with self._watering_lock:
             _LOGGER.info("%s: opening valve for %d min (%s)", self.zone_name, duration_min, reason)
@@ -374,18 +403,56 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
     def _calibration_followup(self, _now=None) -> None:
         soil_after = self._read_soil_moisture()
         if soil_after is None or self._soil_before is None or self._last_duration == 0:
+            _LOGGER.debug(
+                "%s: calibration followup skipped — missing data (soil_after=%s, soil_before=%s, duration=%s)",
+                self.zone_name, soil_after, self._soil_before, self._last_duration,
+            )
             return
         rise = soil_after - self._soil_before
+        # Allow up to -1% tolerance for sensor noise and fast-draining soils.
+        # Only skip if moisture genuinely didn't absorb (sensor may read slightly
+        # below starting value due to surface evaporation in heat/wind).
+        if rise < -1.0:
+            _LOGGER.debug(
+                "%s: calibration skipped — soil dropped %.1f%% (before=%.1f, after=%.1f); "
+                "possible fast-draining soil or sensor in unwatered spot",
+                self.zone_name, rise, self._soil_before, soil_after,
+            )
+            return
         if rise <= 0:
-            _LOGGER.debug("%s: calibration skipped — no soil rise detected", self.zone_name)
+            _LOGGER.debug(
+                "%s: calibration skipped — no measurable soil rise (before=%.1f, after=%.1f)",
+                self.zone_name, self._soil_before, soil_after,
+            )
             return
         rate = round(rise / self._last_duration, 4)
         if self._calibration is None:
             self._calibration = rate
         else:
             self._calibration = round(0.8 * self._calibration + 0.2 * rate, 4)
-        _LOGGER.info("%s: calibration updated → %.4f %%/min", self.zone_name, self._calibration)
+        _LOGGER.info(
+            "%s: calibration updated → %.4f %%/min (rise=%.1f%% over %d min)",
+            self.zone_name, self._calibration, rise, self._last_duration,
+        )
+        # Bug fix: update coordinator.data immediately so native_value reflects
+        # the new calibration without waiting for the next 15-min poll.
+        if self.data is not None:
+            self.data["calibration"] = self._calibration
         self.async_update_listeners()
+        # Persist to Store so calibration survives HA restarts even if entity
+        # state is briefly unknown (avoids the RestoreEntity timing race).
+        self.hass.async_create_task(self._persist_calibration())
+
+    def force_calibration_followup(self) -> None:
+        """Public entry point for the force_calibration service.
+
+        Runs the calibration followup immediately using the current soil reading.
+        Useful after a manual watering run to verify the sensor detects moisture rise.
+        If _soil_before is None (after a restart), uses current moisture as both
+        before and after so the result shows a 0-rise (expected — logs will explain).
+        """
+        _LOGGER.info("%s: force_calibration_followup called manually", self.zone_name)
+        self._calibration_followup()
 
     async def water_now(self, duration_min: int) -> None:
         """Public entry point for the water_zone service."""

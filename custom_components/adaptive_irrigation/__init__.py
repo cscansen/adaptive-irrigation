@@ -89,6 +89,7 @@ async def _setup_zone_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         domain_data.setdefault("window_end_hour", DEFAULT_WINDOW_END_HOUR)
 
     coordinator = AdaptiveIrrigationCoordinator(hass, entry)
+    await coordinator.async_load_from_store()
     await coordinator.async_config_entry_first_refresh()
     domain_data[entry.entry_id] = coordinator
 
@@ -141,5 +142,60 @@ def _register_services(hass: HomeAssistant) -> None:
         else:
             _LOGGER.warning("evaluate_now: zone '%s' not found", zone_id)
 
+    async def handle_force_calibration(call):
+        """Manually trigger the calibration followup for a zone right now.
+
+        Useful after a manual watering run to immediately see whether the sensor
+        detected a moisture rise and what rate was computed.
+        """
+        zone_id = call.data["zone_id"]
+        coord = _find_coordinator(zone_id)
+        if not coord:
+            _LOGGER.warning("force_calibration: zone '%s' not found", zone_id)
+            return
+        coord.force_calibration_followup()
+
+    async def handle_calibration_status(call):
+        """Post a persistent notification with calibration debug info for all zones."""
+        lines = ["## Adaptive Irrigation — Calibration Status\n"]
+        for coord in hass.data.get(DOMAIN, {}).values():
+            if not hasattr(coord, "zone_name") or not hasattr(coord, "_calibration"):
+                continue
+            moisture = coord._read_soil_moisture()
+            cal = coord._calibration
+            soil_before = coord._soil_before
+            last_dur = coord._last_duration
+            last_w = coord._last_watered
+            from_store = coord._calibration_from_store
+
+            rise_preview = None
+            if moisture is not None and soil_before is not None:
+                rise_preview = round(moisture - soil_before, 1)
+
+            lines.append(f"### {coord.zone_name.replace('_', ' ').title()}")
+            lines.append(f"- Calibration rate: **{f'{cal:.4f} %/min' if cal is not None else 'unknown'}**")
+            lines.append(f"- Source: {'Store ✓' if from_store else 'RestoreEntity / not yet computed'}")
+            lines.append(f"- Current soil: {f'{moisture:.1f}%' if moisture is not None else 'unavailable'}")
+            lines.append(f"- Soil before last water: {f'{soil_before:.1f}%' if soil_before is not None else 'not set (restart cleared it)'}")
+            lines.append(f"- Last watering duration: {last_dur} min")
+            lines.append(f"- Last watered: {last_w.isoformat() if last_w else 'unknown'}")
+            if rise_preview is not None:
+                lines.append(f"- Rise if followup ran now: {rise_preview:+.1f}%")
+                if last_dur > 0 and rise_preview > 0:
+                    projected_rate = round(rise_preview / last_dur, 4)
+                    lines.append(f"- Projected rate if followup ran now: {projected_rate:.4f} %/min")
+            lines.append("")
+
+        await hass.services.async_call(
+            "persistent_notification", "create",
+            {
+                "notification_id": "adaptive_irrigation_calibration_status",
+                "title": "Irrigation Calibration Status",
+                "message": "\n".join(lines),
+            },
+        )
+
     hass.services.async_register(DOMAIN, "water_zone", handle_water_zone)
     hass.services.async_register(DOMAIN, "evaluate_now", handle_evaluate_now)
+    hass.services.async_register(DOMAIN, "force_calibration", handle_force_calibration)
+    hass.services.async_register(DOMAIN, "calibration_status", handle_calibration_status)

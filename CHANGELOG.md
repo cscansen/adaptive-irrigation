@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.7.1] - 2026-06-18
+
+### Fixed
+- **Valve unavailability now blocks watering** — if the Yardian zone switch is
+  `unavailable` (controller offline, integration not loaded), the coordinator skips
+  the watering decision and reports `Skipped — valve unavailable (Yardian offline?)`
+  instead of silently calling `switch.turn_on` on an unavailable entity and claiming
+  "Watering" while the sprinklers do nothing. A secondary guard in `_water_zone`
+  catches the same condition right before the valve open call.
+
+## [0.7.0] - 2026-06-17
+
+### Fixed
+- **Calibration rate now persists across HA restarts** — calibration is written to
+  HA storage (`Store`) after every successful update. On startup, the stored value
+  is loaded before the first poll cycle, so the coordinator always has the correct
+  rate immediately. Previously, calibration lived only in `RestoreEntity` state, which
+  requires the entity to have shown a non-unknown value at shutdown — a race that was
+  consistently lost.
+- **Calibration rate now reflects immediately in HA** — `_calibration_followup` now
+  updates `coordinator.data["calibration"]` directly so the entity value updates on
+  the next `async_update_listeners()` call rather than waiting up to 15 minutes for
+  the next poll cycle.
+- **Fast-draining soil zones can now calibrate** — the `rise <= 0` guard that
+  silently skipped calibration has been tightened to `rise < -1.0`. Zones like Yard
+  West where surface evaporation in heat/wind causes the sensor to read slightly below
+  the pre-watering baseline will now accumulate calibration data instead of being
+  permanently skipped.
+
+### Added
+- **`adaptive_irrigation.calibration_status` service** — posts a persistent
+  notification with a full debug dump for all zones: calibration rate, data source
+  (Store vs RestoreEntity), current soil moisture, last watering context, and a
+  projected rate if the followup were to run right now.
+- **`adaptive_irrigation.force_calibration` service** — manually triggers the
+  calibration followup for a zone using the current soil reading. Use this immediately
+  after a manual watering run to verify the sensor detects moisture rise and to seed
+  calibration data without waiting for the next automatic cycle.
+
 ## [0.6.9] - 2026-05-17
 
 ### Added
