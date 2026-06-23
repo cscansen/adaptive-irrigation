@@ -19,6 +19,8 @@ from .const import (
     CONF_MIN_INTERVAL,
     CONF_MOTION_SENSOR,
     CONF_SENSOR_REQUIRED,
+    CONF_SOAK_CYCLES,
+    CONF_SOAK_PAUSE_MINUTES,
     CONF_SOIL_SENSORS,
     CONF_SOIL_THRESHOLD,
     CONF_VALVE_SWITCH,
@@ -35,6 +37,8 @@ from .const import (
     DEFAULT_FLOW_RATE_GPM,
     DEFAULT_MAX_DURATION,
     DEFAULT_MIN_INTERVAL,
+    DEFAULT_SOAK_CYCLES,
+    DEFAULT_SOAK_PAUSE_MINUTES,
     DEFAULT_SOIL_THRESHOLD,
     DEFAULT_WATER_INTERVAL_DAYS,
     DEFAULT_WEATHER_ENTITY,
@@ -88,6 +92,8 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
         self._live_water_interval_days: int | None = None
         self._live_max_duration: int | None = None
         self._live_flow_rate: float | None = None
+        self._live_soak_cycles: int | None = None
+        self._live_soak_pause_minutes: int | None = None
 
     # --- Effective-value properties (live entity overrides config) ---
 
@@ -132,6 +138,18 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
         if self._live_flow_rate is not None:
             return self._live_flow_rate
         return float(self.config.get(CONF_FLOW_RATE_GPM, DEFAULT_FLOW_RATE_GPM))
+
+    @property
+    def _effective_soak_cycles(self) -> int:
+        if self._live_soak_cycles is not None:
+            return self._live_soak_cycles
+        return int(self.config.get(CONF_SOAK_CYCLES, DEFAULT_SOAK_CYCLES))
+
+    @property
+    def _effective_soak_pause_minutes(self) -> int:
+        if self._live_soak_pause_minutes is not None:
+            return self._live_soak_pause_minutes
+        return int(self.config.get(CONF_SOAK_PAUSE_MINUTES, DEFAULT_SOAK_PAUSE_MINUTES))
 
     # --- Entity callbacks (called after restore) ---
 
@@ -182,6 +200,12 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
 
     def set_live_flow_rate(self, value: float) -> None:
         self._live_flow_rate = value
+
+    def set_live_soak_cycles(self, value: int) -> None:
+        self._live_soak_cycles = value
+
+    def set_live_soak_pause_minutes(self, value: int) -> None:
+        self._live_soak_pause_minutes = value
 
     # --- Main poll ---
 
@@ -381,34 +405,62 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
                             "not found" if valve_state is None else "unavailable")
             return
         zone_label = self.zone_name.replace("_", " ").title()
-        async with self._watering_lock:
-            _LOGGER.info("%s: opening valve for %d min (%s)", self.zone_name, duration_min, reason)
-            try:
-                await self.hass.services.async_call(
-                    "switch", "turn_on", {"entity_id": valve}, blocking=True
-                )
-                self._last_watered = dt_util.utcnow()
-                self._soil_before = soil_before
-                self._last_duration = duration_min
-                self.async_update_listeners()
+        cycles = max(1, self._effective_soak_cycles)
+        pause_min = self._effective_soak_pause_minutes
+        # Distribute total duration evenly across cycles (integer minutes, at least 1 per cycle)
+        cycle_min = max(1, duration_min // cycles)
+        total_actual = cycle_min * cycles
 
-                soil_msg = f" Soil was at {soil_before:.0f}%." if soil_before is not None else ""
+        async with self._watering_lock:
+            if cycles > 1:
+                _LOGGER.info(
+                    "%s: soak/cycle — %d × %d min with %d min pauses (%s)",
+                    self.zone_name, cycles, cycle_min, pause_min, reason,
+                )
+            else:
+                _LOGGER.info("%s: opening valve for %d min (%s)", self.zone_name, cycle_min, reason)
+
+            self._last_watered = dt_util.utcnow()
+            self._soil_before = soil_before
+            self._last_duration = total_actual
+            self.async_update_listeners()
+
+            soil_msg = f" Soil was at {soil_before:.0f}%." if soil_before is not None else ""
+            if cycles > 1:
                 self._notify(
                     f"irrigation_{self.zone_name}_session",
-                    f"Watering {zone_label} for {duration_min} min.{soil_msg}",
+                    f"Watering {zone_label}: {cycles} × {cycle_min} min with {pause_min}-min soak pauses.{soil_msg}",
                 )
-                await asyncio.sleep(duration_min * 60)
-                # Accumulate usage estimate when no real meter is configured
+            else:
+                self._notify(
+                    f"irrigation_{self.zone_name}_session",
+                    f"Watering {zone_label} for {cycle_min} min.{soil_msg}",
+                )
+
+            gallons_per_cycle = cycle_min * self._effective_flow_rate
+            for i in range(cycles):
+                try:
+                    await self.hass.services.async_call(
+                        "switch", "turn_on", {"entity_id": valve}, blocking=True
+                    )
+                    await asyncio.sleep(cycle_min * 60)
+                finally:
+                    await self.hass.services.async_call(
+                        "switch", "turn_off", {"entity_id": valve}, blocking=True
+                    )
+                    _LOGGER.info("%s: valve closed (cycle %d/%d)", self.zone_name, i + 1, cycles)
+
+                # Accumulate usage per cycle so budget is updated incrementally
                 d = self.hass.data.setdefault(DOMAIN, {})
                 if not d.get("water_meter_entity"):
-                    d["daily_used_gallons"] = (
-                        d.get("daily_used_gallons", 0.0) + duration_min * self._effective_flow_rate
+                    d["daily_used_gallons"] = d.get("daily_used_gallons", 0.0) + gallons_per_cycle
+
+                if i < cycles - 1:
+                    _LOGGER.info(
+                        "%s: soak pause %d min before cycle %d/%d",
+                        self.zone_name, pause_min, i + 2, cycles,
                     )
-            finally:
-                await self.hass.services.async_call(
-                    "switch", "turn_off", {"entity_id": valve}, blocking=True
-                )
-                _LOGGER.info("%s: valve closed", self.zone_name)
+                    await asyncio.sleep(pause_min * 60)
 
         if soil_before is not None:
             async_call_later(self.hass, CALIBRATION_FOLLOWUP_SECONDS, self._calibration_followup)

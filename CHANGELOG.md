@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.7.3] - 2026-06-23
+
+### Added
+- **Soak/cycle watering** — two new per-zone number entities: `Soak Cycles` (1–5,
+  default 1 = single run) and `Soak Pause` (5–120 min, default 30 min). When cycles
+  > 1, the calculated duration is divided evenly across cycles with a soak pause
+  between each run. Budget accounting is incremental (updated after each cycle).
+  Notification and log messages describe the cycle count and pause duration.
+  Set `Soak Cycles = 3` and `Soak Pause = 30 min` on yard zones for the
+  deep-infrequent / runoff-prevention pattern.
+
 ## [0.7.2] - 2026-06-18
 
 ### Changed

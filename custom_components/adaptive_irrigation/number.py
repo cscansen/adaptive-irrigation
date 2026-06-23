@@ -11,11 +11,15 @@ from .const import (
     CONF_DAILY_BUDGET_GALLONS,
     CONF_FLOW_RATE_GPM,
     CONF_MAX_DURATION,
+    CONF_SOAK_CYCLES,
+    CONF_SOAK_PAUSE_MINUTES,
     CONF_SOIL_THRESHOLD,
     CONF_WATER_INTERVAL_DAYS,
     DEFAULT_DAILY_BUDGET_GALLONS,
     DEFAULT_FLOW_RATE_GPM,
     DEFAULT_MAX_DURATION,
+    DEFAULT_SOAK_CYCLES,
+    DEFAULT_SOAK_PAUSE_MINUTES,
     DEFAULT_SOIL_THRESHOLD,
     DEFAULT_WATER_INTERVAL_DAYS,
     DOMAIN,
@@ -44,6 +48,8 @@ async def async_setup_entry(
         WaterIntervalNumber(coordinator),
         MaxDurationNumber(coordinator),
         FlowRateNumber(coordinator),
+        SoakCyclesNumber(coordinator),
+        SoakPauseMinutesNumber(coordinator),
     ]
     # Legacy: no system entry yet — add DailyBudgetNumber so existing installs don't lose it
     if "system_entry_id" not in domain_data and not domain_data.get("system_number_added"):
@@ -163,6 +169,28 @@ class FlowRateNumber(_ZoneNumber):
 
     def _push_to_coordinator(self) -> None:
         self.coordinator.set_live_flow_rate(self._current_value)
+
+
+class SoakCyclesNumber(_ZoneNumber):
+    _attr_icon = "mdi:repeat"
+
+    def __init__(self, coordinator: AdaptiveIrrigationCoordinator) -> None:
+        default = coordinator.config.get(CONF_SOAK_CYCLES, DEFAULT_SOAK_CYCLES)
+        super().__init__(coordinator, "soak_cycles", "Soak Cycles", "cycles", 1.0, 5.0, 1.0, default)
+
+    def _push_to_coordinator(self) -> None:
+        self.coordinator.set_live_soak_cycles(int(self._current_value))
+
+
+class SoakPauseMinutesNumber(_ZoneNumber):
+    _attr_icon = "mdi:timer-pause-outline"
+
+    def __init__(self, coordinator: AdaptiveIrrigationCoordinator) -> None:
+        default = coordinator.config.get(CONF_SOAK_PAUSE_MINUTES, DEFAULT_SOAK_PAUSE_MINUTES)
+        super().__init__(coordinator, "soak_pause_minutes", "Soak Pause", "min", 5.0, 120.0, 5.0, default)
+
+    def _push_to_coordinator(self) -> None:
+        self.coordinator.set_live_soak_pause_minutes(int(self._current_value))
 
 
 _CONFIG_DEVICE = {

@@ -10,6 +10,7 @@ A Home Assistant custom integration that makes soil-moisture-aware, weather-info
 - **Motion deferral** — skips zones with active motion sensors, retries next poll
 - **Wind skip** — defers when wind exceeds 25 mph
 - **Self-calibration** — measures actual moisture rise per minute after each watering; improves duration estimates over time
+- **Soak/cycle watering** — splits a run into N cycles with configurable soak pauses to prevent runoff; set `Soak Cycles` > 1 per zone
 - **Persistent notifications** — per-zone dashboard cards for every watering decision
 - **Manual override services** — `water_zone` and `evaluate_now`
 - **Sensor-free mode** — drip zones with no soil sensor infer drying rate from peer zones' moisture trends; falls back to a configurable day interval
@@ -62,6 +63,8 @@ A Home Assistant custom integration that makes soil-moisture-aware, weather-info
 | `number.*_soil_threshold` | Moisture % trigger threshold (60–99%) |
 | `number.*_water_interval_days` | Drip zone base interval between waterings (1–14 days) |
 | `number.*_max_duration` | Hard cap on watering time (1–60 min) |
+| `number.*_soak_cycles` | Number of soak/cycle runs per session (1 = single run, 2–5 = split with pauses) |
+| `number.*_soak_pause` | Minutes between soak cycles (5–120 min, default 30) |
 
 ## Services
 
