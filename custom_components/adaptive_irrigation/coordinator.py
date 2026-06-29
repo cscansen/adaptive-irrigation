@@ -65,6 +65,7 @@ class AdaptiveIrrigationCoordinator(DataUpdateCoordinator):
             _LOGGER,
             name=f"{DOMAIN}_{entry.data['zone_name']}",
             update_interval=timedelta(minutes=SCAN_INTERVAL_MINUTES),
+            config_entry=entry,
         )
         self.entry = entry
         self.zone_name = entry.data["zone_name"]
