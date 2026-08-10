@@ -37,6 +37,29 @@ from .const import (
     ENTRY_TYPE_SYSTEM,
     ENTRY_TYPE_ZONE,
     HOUR_LABELS,
+    CONF_COOLING_DURATION,
+    CONF_COOLING_ENABLED,
+    CONF_COOLING_MAX_RUNS_PER_DAY,
+    CONF_COOLING_MIN_INTERVAL,
+    CONF_COOLING_MOISTURE_CEILING,
+    CONF_COOLING_TEMP_THRESHOLD,
+    CONF_COOLING_WIND_LIMIT,
+    CONF_COOLING_WINDOW_END_HOUR,
+    CONF_COOLING_WINDOW_START_HOUR,
+    CONF_FILL_TARGET,
+    CONF_REFILL_POINT,
+    CONF_SOIL_TEMP_SENSOR,
+    DEFAULT_COOLING_DURATION,
+    DEFAULT_COOLING_ENABLED,
+    DEFAULT_COOLING_MAX_RUNS_PER_DAY,
+    DEFAULT_COOLING_MIN_INTERVAL,
+    DEFAULT_COOLING_MOISTURE_CEILING,
+    DEFAULT_COOLING_TEMP_THRESHOLD,
+    DEFAULT_COOLING_WIND_LIMIT,
+    DEFAULT_COOLING_WINDOW_END_HOUR,
+    DEFAULT_COOLING_WINDOW_START_HOUR,
+    DEFAULT_FILL_TARGET,
+    DEFAULT_REFILL_POINT,
     SEEDLING_DEFAULT_FALLBACK,
     SEEDLING_DEFAULT_THRESHOLD,
     ZONE_TYPE_SEEDLING,
@@ -61,6 +84,8 @@ HOUR_OPTIONS = [selector.SelectOptionDict(value=HOUR_LABELS[i], label=HOUR_LABEL
 def _system_schema_dict(defaults: dict) -> dict:
     start_default = HOUR_LABELS[int(defaults.get(CONF_WINDOW_START_HOUR, DEFAULT_WINDOW_START_HOUR))]
     end_default   = HOUR_LABELS[int(defaults.get(CONF_WINDOW_END_HOUR,   DEFAULT_WINDOW_END_HOUR))]
+    cool_start_default = HOUR_LABELS[int(defaults.get(CONF_COOLING_WINDOW_START_HOUR, DEFAULT_COOLING_WINDOW_START_HOUR))]
+    cool_end_default   = HOUR_LABELS[int(defaults.get(CONF_COOLING_WINDOW_END_HOUR,   DEFAULT_COOLING_WINDOW_END_HOUR))]
     return {
         vol.Required(CONF_WEATHER_ENTITY, default=defaults.get(CONF_WEATHER_ENTITY, DEFAULT_WEATHER_ENTITY)): selector.EntitySelector(
             selector.EntitySelectorConfig(domain="weather")
@@ -76,6 +101,22 @@ def _system_schema_dict(defaults: dict) -> dict:
         ),
         vol.Optional(CONF_DAILY_BUDGET_GALLONS, default=float(defaults.get(CONF_DAILY_BUDGET_GALLONS, DEFAULT_DAILY_BUDGET_GALLONS))): selector.NumberSelector(
             selector.NumberSelectorConfig(min=0, max=5000, step=10, unit_of_measurement="gal")
+        ),
+        # --- Heat-stress cooling (system-wide limits) ---
+        vol.Optional(CONF_COOLING_WINDOW_START_HOUR, default=cool_start_default): selector.SelectSelector(
+            selector.SelectSelectorConfig(options=HOUR_OPTIONS)
+        ),
+        vol.Optional(CONF_COOLING_WINDOW_END_HOUR, default=cool_end_default): selector.SelectSelector(
+            selector.SelectSelectorConfig(options=HOUR_OPTIONS)
+        ),
+        vol.Optional(CONF_COOLING_MAX_RUNS_PER_DAY, default=defaults.get(CONF_COOLING_MAX_RUNS_PER_DAY, DEFAULT_COOLING_MAX_RUNS_PER_DAY)): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0, max=10, step=1)
+        ),
+        vol.Optional(CONF_COOLING_MIN_INTERVAL, default=defaults.get(CONF_COOLING_MIN_INTERVAL, DEFAULT_COOLING_MIN_INTERVAL)): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=15, max=240, step=15, unit_of_measurement="min")
+        ),
+        vol.Optional(CONF_COOLING_WIND_LIMIT, default=defaults.get(CONF_COOLING_WIND_LIMIT, DEFAULT_COOLING_WIND_LIMIT)): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=5, max=40, step=1, unit_of_measurement="mph")
         ),
     }
 
@@ -119,6 +160,27 @@ def _zone_schema_dict(defaults: dict) -> dict:
         vol.Optional(CONF_MIN_INTERVAL, default=defaults.get(CONF_MIN_INTERVAL, DEFAULT_MIN_INTERVAL)): selector.NumberSelector(
             selector.NumberSelectorConfig(min=15, max=240, step=15, unit_of_measurement="min")
         ),
+        # --- Interval-adaptive model ---
+        vol.Optional(CONF_REFILL_POINT, default=defaults.get(CONF_REFILL_POINT, DEFAULT_REFILL_POINT)): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=10, max=90, step=1, unit_of_measurement="%")
+        ),
+        vol.Optional(CONF_FILL_TARGET, default=defaults.get(CONF_FILL_TARGET, DEFAULT_FILL_TARGET)): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=20, max=99, step=1, unit_of_measurement="%")
+        ),
+        # --- Heat-stress cooling (per zone) ---
+        vol.Optional(CONF_SOIL_TEMP_SENSOR): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="sensor", device_class="temperature")
+        ),
+        vol.Optional(CONF_COOLING_ENABLED, default=defaults.get(CONF_COOLING_ENABLED, DEFAULT_COOLING_ENABLED)): selector.BooleanSelector(),
+        vol.Optional(CONF_COOLING_TEMP_THRESHOLD, default=defaults.get(CONF_COOLING_TEMP_THRESHOLD, DEFAULT_COOLING_TEMP_THRESHOLD)): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=80, max=120, step=1, unit_of_measurement="°F")
+        ),
+        vol.Optional(CONF_COOLING_DURATION, default=defaults.get(CONF_COOLING_DURATION, DEFAULT_COOLING_DURATION)): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=1, max=10, step=1, unit_of_measurement="min")
+        ),
+        vol.Optional(CONF_COOLING_MOISTURE_CEILING, default=defaults.get(CONF_COOLING_MOISTURE_CEILING, DEFAULT_COOLING_MOISTURE_CEILING)): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=40, max=99, step=1, unit_of_measurement="%")
+        ),
     }
 
 
@@ -135,6 +197,10 @@ def _coerce_system_input(user_input: dict) -> dict:
     if CONF_WINDOW_END_HOUR in data:
         val = data[CONF_WINDOW_END_HOUR]
         data[CONF_WINDOW_END_HOUR] = HOUR_LABELS.index(val) if val in HOUR_LABELS else int(val)
+    for key in (CONF_COOLING_WINDOW_START_HOUR, CONF_COOLING_WINDOW_END_HOUR):
+        if key in data:
+            val = data[key]
+            data[key] = HOUR_LABELS.index(val) if val in HOUR_LABELS else int(val)
     return data
 
 

@@ -6,6 +6,16 @@ from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    CONF_COOLING_MAX_RUNS_PER_DAY,
+    CONF_COOLING_MIN_INTERVAL,
+    CONF_COOLING_WIND_LIMIT,
+    CONF_COOLING_WINDOW_END_HOUR,
+    CONF_COOLING_WINDOW_START_HOUR,
+    DEFAULT_COOLING_MAX_RUNS_PER_DAY,
+    DEFAULT_COOLING_MIN_INTERVAL,
+    DEFAULT_COOLING_WIND_LIMIT,
+    DEFAULT_COOLING_WINDOW_END_HOUR,
+    DEFAULT_COOLING_WINDOW_START_HOUR,
     CONF_DAILY_BUDGET_GALLONS,
     CONF_WATER_METER_ENTITY,
     CONF_WEATHER_ENTITY,
@@ -61,6 +71,21 @@ async def _setup_system_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     domain_data.setdefault("water_restriction", False)
     domain_data["window_start_hour"] = int(opts.get(CONF_WINDOW_START_HOUR, DEFAULT_WINDOW_START_HOUR))
     domain_data["window_end_hour"]   = int(opts.get(CONF_WINDOW_END_HOUR,   DEFAULT_WINDOW_END_HOUR))
+
+    # Heat-stress cooling — system-wide limits. The end hour is additionally
+    # clamped to COOLING_HARD_STOP_HOUR in the coordinator: a canopy left wet
+    # overnight invites fungal disease, so that bound is not configurable.
+    domain_data["cooling_enabled"] = True
+    domain_data["cooling_window_start_hour"] = int(
+        opts.get(CONF_COOLING_WINDOW_START_HOUR, DEFAULT_COOLING_WINDOW_START_HOUR))
+    domain_data["cooling_window_end_hour"] = int(
+        opts.get(CONF_COOLING_WINDOW_END_HOUR, DEFAULT_COOLING_WINDOW_END_HOUR))
+    domain_data["cooling_max_runs_per_day"] = int(
+        opts.get(CONF_COOLING_MAX_RUNS_PER_DAY, DEFAULT_COOLING_MAX_RUNS_PER_DAY))
+    domain_data["cooling_min_interval"] = float(
+        opts.get(CONF_COOLING_MIN_INTERVAL, DEFAULT_COOLING_MIN_INTERVAL))
+    domain_data["cooling_wind_limit"] = float(
+        opts.get(CONF_COOLING_WIND_LIMIT, DEFAULT_COOLING_WIND_LIMIT))
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS_SYSTEM)
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
@@ -134,6 +159,15 @@ def _register_services(hass: HomeAssistant) -> None:
         else:
             _LOGGER.warning("water_zone: zone '%s' not found", zone_id)
 
+    async def handle_cool_zone(call):
+        zone_id = call.data["zone_id"]
+        duration = call.data.get("duration_minutes")
+        coord = _find_coordinator(zone_id)
+        if coord:
+            await coord.cool_now(int(duration) if duration else None)
+        else:
+            _LOGGER.warning("cool_zone: zone '%s' not found", zone_id)
+
     async def handle_evaluate_now(call):
         zone_id = call.data["zone_id"]
         coord = _find_coordinator(zone_id)
@@ -196,6 +230,7 @@ def _register_services(hass: HomeAssistant) -> None:
         )
 
     hass.services.async_register(DOMAIN, "water_zone", handle_water_zone)
+    hass.services.async_register(DOMAIN, "cool_zone", handle_cool_zone)
     hass.services.async_register(DOMAIN, "evaluate_now", handle_evaluate_now)
     hass.services.async_register(DOMAIN, "force_calibration", handle_force_calibration)
     hass.services.async_register(DOMAIN, "calibration_status", handle_calibration_status)

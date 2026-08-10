@@ -7,7 +7,14 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_ZONE_TYPE, DEFAULT_ZONE_TYPE, DOMAIN, ENTRY_TYPE_SYSTEM, ZONE_TYPE_SEEDLING
+from .const import (
+    CONF_SOIL_TEMP_SENSOR,
+    CONF_ZONE_TYPE,
+    DEFAULT_ZONE_TYPE,
+    DOMAIN,
+    ENTRY_TYPE_SYSTEM,
+    ZONE_TYPE_SEEDLING,
+)
 from .coordinator import AdaptiveIrrigationCoordinator
 
 
@@ -28,6 +35,8 @@ async def async_setup_entry(
         AdaptiveIrrigationZoneSwitch(coordinator),
         SeedlingModeSwitch(coordinator),
     ]
+    if coordinator.config.get(CONF_SOIL_TEMP_SENSOR):
+        entities.append(CoolingEnabledSwitch(coordinator))
     # Legacy backward-compat
     if "system_entry_id" not in domain_data and not domain_data.get("master_switch_added"):
         domain_data["master_switch_added"] = True
@@ -202,4 +211,55 @@ class WaterRestrictionSwitch(RestoreEntity, SwitchEntity):
     async def async_turn_off(self, **kwargs) -> None:
         self._is_on = False
         self.hass.data[DOMAIN]["water_restriction"] = False
+        self.async_write_ha_state()
+
+
+class CoolingEnabledSwitch(
+    CoordinatorEntity[AdaptiveIrrigationCoordinator], RestoreEntity, SwitchEntity
+):
+    """Per-zone enable for heat-stress cooling.
+
+    Deliberately separate from Auto Watering: cooling is a heat intervention,
+    not irrigation, and it is reasonable to want one without the other. Both
+    the master switch and the water-restriction switch still override this.
+    """
+
+    _attr_icon = "mdi:snowflake"
+
+    def __init__(self, coordinator: AdaptiveIrrigationCoordinator) -> None:
+        super().__init__(coordinator)
+        zone = coordinator.zone_name
+        self._attr_unique_id = f"{DOMAIN}_{zone}_cooling_enabled"
+        self._attr_has_entity_name = True
+        self._attr_name = "Heat Cooling"
+        self._is_on = True
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_state()
+        if last is not None:
+            self._is_on = last.state == "on"
+        self.coordinator.set_cooling_enabled(self._is_on)
+
+    @property
+    def device_info(self):
+        zone = self.coordinator.zone_name
+        return {
+            "identifiers": {(DOMAIN, zone)},
+            "name": f"Adaptive Irrigation — {zone.replace('_', ' ').title()}",
+            "manufacturer": "adaptive_irrigation",
+        }
+
+    @property
+    def is_on(self) -> bool:
+        return self._is_on
+
+    async def async_turn_on(self, **kwargs) -> None:
+        self._is_on = True
+        self.coordinator.set_cooling_enabled(True)
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs) -> None:
+        self._is_on = False
+        self.coordinator.set_cooling_enabled(False)
         self.async_write_ha_state()

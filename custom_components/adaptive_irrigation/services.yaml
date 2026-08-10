@@ -49,3 +49,27 @@ calibration_status:
     Post a persistent notification with calibration debug info for all zones:
     current rate, source (Store vs RestoreEntity), current soil, last watering
     context, and a projected rate if the followup ran right now.
+
+cool_zone:
+  name: Cool Zone
+  description: >-
+    Run a short cooling application (syringing) on a zone to knock the top off
+    a root-zone temperature spike. This is a heat-stress intervention, not
+    irrigation — it does not affect last watered, the calibration estimate, or
+    the dry-down interval.
+  fields:
+    zone_id:
+      name: Zone ID
+      description: The zone name as configured (e.g. "yard_west").
+      required: true
+      selector:
+        text:
+    duration_minutes:
+      name: Duration (minutes)
+      description: How long to run. Defaults to the zone's configured cooling duration.
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 10
+          unit_of_measurement: min

@@ -8,6 +8,17 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
+    CONF_COOLING_DURATION,
+    CONF_COOLING_TEMP_THRESHOLD,
+    CONF_FALLBACK_DURATION,
+    CONF_FILL_TARGET,
+    CONF_REFILL_POINT,
+    CONF_SOIL_TEMP_SENSOR,
+    DEFAULT_COOLING_DURATION,
+    DEFAULT_COOLING_TEMP_THRESHOLD,
+    DEFAULT_FALLBACK_DURATION,
+    DEFAULT_FILL_TARGET,
+    DEFAULT_REFILL_POINT,
     CONF_DAILY_BUDGET_GALLONS,
     CONF_FLOW_RATE_GPM,
     CONF_MAX_DURATION,
@@ -50,7 +61,16 @@ async def async_setup_entry(
         FlowRateNumber(coordinator),
         SoakCyclesNumber(coordinator),
         SoakPauseMinutesNumber(coordinator),
+        RefillPointNumber(coordinator),
+        FillTargetNumber(coordinator),
+        FallbackDurationNumber(coordinator),
     ]
+    # Cooling controls only make sense on zones with a root-zone probe.
+    if coordinator.config.get(CONF_SOIL_TEMP_SENSOR):
+        entities.extend([
+            CoolingThresholdNumber(coordinator),
+            CoolingDurationNumber(coordinator),
+        ])
     # Legacy: no system entry yet — add DailyBudgetNumber so existing installs don't lose it
     if "system_entry_id" not in domain_data and not domain_data.get("system_number_added"):
         domain_data["system_number_added"] = True
@@ -287,3 +307,77 @@ class WindowEndHourNumber(_SystemNumber):
 
     def _push_to_domain(self) -> None:
         self._hass.data[DOMAIN]["window_end_hour"] = int(self._current_value)
+
+
+class RefillPointNumber(_ZoneNumber):
+    """Moisture level at which the zone has earned its next deep soak.
+
+    Under the interval-adaptive model this replaces Soil Threshold as the
+    trigger. Lower means longer, deeper dry-down cycles; do not lower it on
+    turf that is already heat-stressed.
+    """
+
+    _attr_icon = "mdi:water-alert-outline"
+
+    def __init__(self, coordinator: AdaptiveIrrigationCoordinator) -> None:
+        default = coordinator.config.get(CONF_REFILL_POINT, DEFAULT_REFILL_POINT)
+        super().__init__(coordinator, "refill_point", "Refill Point", "%", 10.0, 90.0, 1.0, default)
+
+    def _push_to_coordinator(self) -> None:
+        self.coordinator.set_live_refill_point(self._current_value)
+
+
+class FillTargetNumber(_ZoneNumber):
+    """Moisture level a soak aims for — roughly this probe's field capacity."""
+
+    _attr_icon = "mdi:water-plus-outline"
+
+    def __init__(self, coordinator: AdaptiveIrrigationCoordinator) -> None:
+        default = coordinator.config.get(CONF_FILL_TARGET, DEFAULT_FILL_TARGET)
+        super().__init__(coordinator, "fill_target", "Fill Target", "%", 20.0, 99.0, 1.0, default)
+
+    def _push_to_coordinator(self) -> None:
+        self.coordinator.set_live_fill_target(self._current_value)
+
+
+class FallbackDurationNumber(_ZoneNumber):
+    """Soak length used when no calibration estimate is available.
+
+    Previously config-only, which meant a bad calibration could not be worked
+    around from the dashboard.
+    """
+
+    _attr_icon = "mdi:timer-sand"
+
+    def __init__(self, coordinator: AdaptiveIrrigationCoordinator) -> None:
+        default = coordinator.config.get(CONF_FALLBACK_DURATION, DEFAULT_FALLBACK_DURATION)
+        super().__init__(coordinator, "fallback_duration", "Fallback Duration", "min", 1.0, 90.0, 1.0, default)
+
+    def _push_to_coordinator(self) -> None:
+        self.coordinator.set_live_fallback_duration(int(self._current_value))
+
+
+class CoolingThresholdNumber(_ZoneNumber):
+    """Root-zone temperature at which cooling arms for this zone."""
+
+    _attr_icon = "mdi:thermometer-alert"
+
+    def __init__(self, coordinator: AdaptiveIrrigationCoordinator) -> None:
+        default = coordinator.config.get(CONF_COOLING_TEMP_THRESHOLD, DEFAULT_COOLING_TEMP_THRESHOLD)
+        super().__init__(coordinator, "cooling_threshold", "Cooling Threshold", "°F", 80.0, 120.0, 1.0, default)
+
+    def _push_to_coordinator(self) -> None:
+        self.coordinator.set_live_cooling_threshold(self._current_value)
+
+
+class CoolingDurationNumber(_ZoneNumber):
+    """Length of a cooling application. Syringing is 2-3 min, not a soak."""
+
+    _attr_icon = "mdi:snowflake"
+
+    def __init__(self, coordinator: AdaptiveIrrigationCoordinator) -> None:
+        default = coordinator.config.get(CONF_COOLING_DURATION, DEFAULT_COOLING_DURATION)
+        super().__init__(coordinator, "cooling_duration", "Cooling Duration", "min", 1.0, 10.0, 1.0, default)
+
+    def _push_to_coordinator(self) -> None:
+        self.coordinator.set_live_cooling_duration(int(self._current_value))

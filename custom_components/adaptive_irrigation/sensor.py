@@ -11,7 +11,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util.dt import parse_datetime
 
-from .const import DEFAULT_WEATHER_ENTITY, DOMAIN, ENTRY_TYPE_SYSTEM
+from .const import CONF_SOIL_TEMP_SENSOR, DEFAULT_WEATHER_ENTITY, DOMAIN, ENTRY_TYPE_SYSTEM
 from .coordinator import AdaptiveIrrigationCoordinator
 
 _CONFIG_DEVICE = {
@@ -46,7 +46,16 @@ async def async_setup_entry(
         StatusSensor(coordinator, zone),
         LastWateredSensor(coordinator, zone),
         CalibrationSensor(coordinator, zone),
+        DaysToRefillSensor(coordinator, zone),
     ]
+    # Heat-stress entities only exist where a root-zone probe is configured.
+    if coordinator.config.get(CONF_SOIL_TEMP_SENSOR):
+        entities.extend([
+            SoilTemperatureSensor(coordinator, zone),
+            CoolingRunsTodaySensor(coordinator, zone),
+            CoolingDeltaSensor(coordinator, zone),
+            LastCooledSensor(coordinator, zone),
+        ])
     # Legacy backward-compat
     if "system_entry_id" not in domain_data and not domain_data.get("system_sensor_added"):
         domain_data["system_sensor_added"] = True
@@ -216,6 +225,13 @@ class DailyUsedSensor(SensorEntity):
     @property
     def native_value(self) -> float:
         domain_data = self._hass.data.get(DOMAIN, {})
+        # Don't report yesterday's total. The rollover used to depend entirely
+        # on a zone coordinator polling after midnight; if that didn't happen
+        # the figure simply stuck (observed: frozen at 48.0 for 14 hours with a
+        # single recorder point).
+        from homeassistant.util import dt as _dt
+        if domain_data.get("budget_date") != _dt.now().date().isoformat():
+            return 0.0
         meter_entity = domain_data.get("water_meter_entity")
         if meter_entity:
             state = self._hass.states.get(meter_entity)
@@ -247,3 +263,100 @@ class WeatherSourceSensor(SensorEntity):
     @property
     def native_value(self) -> str:
         return self._hass.data.get(DOMAIN, {}).get("weather_entity", DEFAULT_WEATHER_ENTITY)
+
+
+class DaysToRefillSensor(_ZoneBase, SensorEntity):
+    """Projected days until the zone reaches its refill point.
+
+    This is what ET is for under the interval-adaptive model: predicting when
+    the next soak falls due, rather than inflating the fill target.
+    """
+
+    _attr_native_unit_of_measurement = "d"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:calendar-clock"
+
+    def __init__(self, coordinator, zone):
+        super().__init__(coordinator, zone, "days_to_refill")
+        self._attr_name = "Days To Refill"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("days_to_refill") if self.coordinator.data else None
+
+
+class SoilTemperatureSensor(_ZoneBase, SensorEntity):
+    """Root-zone temperature as the integration sees it.
+
+    Surfaced on the zone device because it drives every cooling decision, and
+    because it is the most important number about a sun-exposed lawn.
+    """
+
+    _attr_native_unit_of_measurement = "°F"
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:thermometer"
+
+    def __init__(self, coordinator, zone):
+        super().__init__(coordinator, zone, "soil_temp")
+        self._attr_name = "Root Zone Temperature"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("soil_temp") if self.coordinator.data else None
+
+    @property
+    def extra_state_attributes(self):
+        data = self.coordinator.data or {}
+        rise = data.get("soil_temp_rise")
+        return {
+            "rise_rate_f_per_hour": round(rise * 60, 2) if rise is not None else None,
+            "cooling_status": data.get("cooling_status"),
+        }
+
+
+class CoolingRunsTodaySensor(_ZoneBase, SensorEntity):
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:snowflake"
+
+    def __init__(self, coordinator, zone):
+        super().__init__(coordinator, zone, "cooling_runs_today")
+        self._attr_name = "Cooling Runs Today"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("cooling_runs_today") if self.coordinator.data else None
+
+
+class CoolingDeltaSensor(_ZoneBase, SensorEntity):
+    """Temperature change achieved by the most recent cooling run.
+
+    Makes "did that actually help?" answerable per zone instead of assumed —
+    a run that rebounds straight past its starting temperature is a run that
+    needs retiming, not repeating.
+    """
+
+    _attr_native_unit_of_measurement = "°F"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:thermometer-minus"
+
+    def __init__(self, coordinator, zone):
+        super().__init__(coordinator, zone, "cooling_delta")
+        self._attr_name = "Last Cooling Delta"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("last_cooling_delta") if self.coordinator.data else None
+
+
+class LastCooledSensor(_ZoneBase, SensorEntity):
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_icon = "mdi:clock-outline"
+
+    def __init__(self, coordinator, zone):
+        super().__init__(coordinator, zone, "last_cooling")
+        self._attr_name = "Last Cooled"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("last_cooling") if self.coordinator.data else None

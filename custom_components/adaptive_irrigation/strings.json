@@ -9,7 +9,12 @@
           "window_start_hour": "Watering window start",
           "window_end_hour": "Watering window end",
           "water_meter_entity": "Water meter sensor (optional — e.g. Flume)",
-          "daily_budget_gallons": "Daily water budget (gal, 0 = unlimited)"
+          "daily_budget_gallons": "Daily water budget (gal, 0 = unlimited)",
+          "cooling_window_start_hour": "Cooling window start",
+          "cooling_window_end_hour": "Cooling window end (hard-capped at 18:00)",
+          "cooling_max_runs_per_day": "Max cooling runs per zone per day",
+          "cooling_min_interval_minutes": "Minimum minutes between cooling runs",
+          "cooling_wind_limit_mph": "Cooling wind limit (mph)"
         }
       },
       "zone": {
@@ -27,7 +32,14 @@
           "sensor_required": "Soil sensor required",
           "water_interval_days": "Base watering interval (days, sensor-free zones)",
           "min_interval": "Minimum time between waterings (min)",
-          "flow_rate_gpm": "Flow rate (gal/min)"
+          "flow_rate_gpm": "Flow rate (gal/min)",
+          "refill_point": "Refill point (%) — dry to here before the next soak",
+          "fill_target": "Fill target (%) — soak up to roughly field capacity",
+          "soil_temp_sensor": "Root-zone temperature sensor (enables heat cooling)",
+          "cooling_enabled": "Enable heat-stress cooling for this zone",
+          "cooling_temp_threshold": "Cooling threshold (°F root-zone temperature)",
+          "cooling_duration_minutes": "Cooling duration (min) — syringing is 2–3 min",
+          "cooling_moisture_ceiling": "Skip cooling above this soil moisture (%)"
         }
       }
     },
@@ -56,7 +68,14 @@
           "sensor_required": "Soil sensor required",
           "water_interval_days": "Base watering interval (days)",
           "min_interval": "Minimum time between waterings (min)",
-          "flow_rate_gpm": "Flow rate (gal/min)"
+          "flow_rate_gpm": "Flow rate (gal/min)",
+          "refill_point": "Refill point (%) — dry to here before the next soak",
+          "fill_target": "Fill target (%) — soak up to roughly field capacity",
+          "soil_temp_sensor": "Root-zone temperature sensor (enables heat cooling)",
+          "cooling_enabled": "Enable heat-stress cooling for this zone",
+          "cooling_temp_threshold": "Cooling threshold (°F root-zone temperature)",
+          "cooling_duration_minutes": "Cooling duration (min) — syringing is 2–3 min",
+          "cooling_moisture_ceiling": "Skip cooling above this soil moisture (%)"
         }
       },
       "system": {
@@ -66,7 +85,12 @@
           "window_start_hour": "Watering window start",
           "window_end_hour": "Watering window end",
           "water_meter_entity": "Water meter sensor (optional — e.g. Flume)",
-          "daily_budget_gallons": "Daily water budget (gal, 0 = unlimited)"
+          "daily_budget_gallons": "Daily water budget (gal, 0 = unlimited)",
+          "cooling_window_start_hour": "Cooling window start",
+          "cooling_window_end_hour": "Cooling window end (hard-capped at 18:00)",
+          "cooling_max_runs_per_day": "Max cooling runs per zone per day",
+          "cooling_min_interval_minutes": "Minimum minutes between cooling runs",
+          "cooling_wind_limit_mph": "Cooling wind limit (mph)"
         }
       }
     },

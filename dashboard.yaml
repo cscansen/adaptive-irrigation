@@ -1,0 +1,170 @@
+# Adaptive Irrigation — reference dashboard (v0.8.0)
+#
+# Paste into a dashboard via Edit → ⋮ → Raw configuration editor.
+# Replace the zone names to match your install.
+#
+# Rationale for what's on here:
+#   - Calibration rate is visible per zone. It is the number that governs soak
+#     length, and it being hidden is why an impossible 4.16 %/min went unnoticed.
+#   - Root-zone temperature is per zone. On a sun-exposed lawn it is the most
+#     important number there is, and it drives every cooling decision.
+#   - ET is per zone, not one value presented as system-wide — Kc differs.
+#   - Dry-down history is charted. A moisture curve tells you in one glance what
+#     no status string can: whether a soak actually landed.
+
+views:
+  - title: Irrigation
+    path: irrigation
+    icon: mdi:sprinkler
+    cards:
+
+      - type: markdown
+        content: |
+          ## 💧 Adaptive Irrigation
+          {% for z in ['yard_east','yard_middle','yard_west','front_yard','drip_zone'] %}
+          **{{ z.replace('_',' ').title() }}:** {{ states('sensor.adaptive_irrigation_' ~ z ~ '_status') }}
+          {% endfor %}
+
+      # --- Heat overview: the zones at risk, ranked by root-zone temperature ---
+      - type: entities
+        title: Root Zone Temperature
+        state_color: true
+        entities:
+          - entity: sensor.adaptive_irrigation_yard_west_soil_temp
+            name: Yard West (full sun, no shade)
+          - entity: sensor.adaptive_irrigation_yard_middle_soil_temp
+            name: Yard Middle (shade ~15:00)
+          - entity: sensor.adaptive_irrigation_front_yard_soil_temp
+            name: Front Yard (shade 12:00–14:00)
+          - entity: sensor.adaptive_irrigation_yard_east_soil_temp
+            name: Yard East (shade 12:00–14:00)
+        footer:
+          type: graph
+          entity: sensor.adaptive_irrigation_yard_west_soil_temp
+          hours_to_show: 48
+
+      - type: history-graph
+        title: Root Zone Temperature — 3 days
+        hours_to_show: 72
+        entities:
+          - sensor.adaptive_irrigation_yard_west_soil_temp
+          - sensor.adaptive_irrigation_yard_middle_soil_temp
+          - sensor.adaptive_irrigation_front_yard_soil_temp
+          - sensor.adaptive_irrigation_yard_east_soil_temp
+
+      # --- Dry-down curves: whether soaks are actually landing ---
+      - type: history-graph
+        title: Soil Moisture — 7 day dry-down
+        hours_to_show: 168
+        entities:
+          - sensor.adaptive_irrigation_yard_west_moisture
+          - sensor.adaptive_irrigation_yard_middle_moisture
+          - sensor.adaptive_irrigation_front_yard_moisture
+          - sensor.adaptive_irrigation_yard_east_moisture
+
+      - type: entities
+        title: System
+        entities:
+          - entity: switch.adaptive_irrigation
+            name: System Active
+          - entity: switch.adaptive_irrigation_water_restriction
+            name: Water Restriction
+          - entity: select.configuration_watering_window_start
+            name: Watering Window Start
+          - entity: select.configuration_watering_window_end
+            name: Watering Window End
+          - type: divider
+          - entity: sensor.adaptive_irrigation_daily_water_used
+            name: Daily Used (whole-house)
+
+      - type: grid
+        title: Manual Actions
+        columns: 2
+        square: false
+        cards:
+          - type: button
+            name: Evaluate Yard West
+            icon: mdi:refresh
+            tap_action:
+              action: call-service
+              service: adaptive_irrigation.evaluate_now
+              data: {zone_id: yard_west}
+          - type: button
+            name: Cool Yard West
+            icon: mdi:snowflake
+            tap_action:
+              action: call-service
+              service: adaptive_irrigation.cool_zone
+              data: {zone_id: yard_west}
+          - type: button
+            name: Evaluate Yard Middle
+            icon: mdi:refresh
+            tap_action:
+              action: call-service
+              service: adaptive_irrigation.evaluate_now
+              data: {zone_id: yard_middle}
+          - type: button
+            name: Cool Yard Middle
+            icon: mdi:snowflake
+            tap_action:
+              action: call-service
+              service: adaptive_irrigation.cool_zone
+              data: {zone_id: yard_middle}
+
+      # --- Per-zone detail. Repeat this block per zone. ---
+      - type: entities
+        title: Yard West
+        entities:
+          - entity: sensor.adaptive_irrigation_yard_west_status
+            name: Status
+          - entity: sensor.adaptive_irrigation_yard_west_moisture
+            name: Moisture
+          - entity: sensor.adaptive_irrigation_yard_west_moisture_trend
+            name: Trend
+          - entity: sensor.adaptive_irrigation_yard_west_days_to_refill
+            name: Days To Refill
+          - entity: sensor.adaptive_irrigation_yard_west_last_watered
+            name: Last Soaked
+          - type: divider
+          # Heat
+          - entity: sensor.adaptive_irrigation_yard_west_soil_temp
+            name: Root Zone Temp
+          - entity: sensor.adaptive_irrigation_yard_west_cooling_runs_today
+            name: Cooling Runs Today
+          - entity: sensor.adaptive_irrigation_yard_west_cooling_delta
+            name: Last Cooling Delta
+          - entity: sensor.adaptive_irrigation_yard_west_last_cooling
+            name: Last Cooled
+          - type: divider
+          # Controls
+          - entity: switch.adaptive_irrigation_yard_west_auto_watering
+            name: Auto Watering
+          - entity: switch.adaptive_irrigation_yard_west_cooling_enabled
+            name: Heat Cooling
+          - entity: number.adaptive_irrigation_yard_west_refill_point
+            name: Refill Point
+          - entity: number.adaptive_irrigation_yard_west_fill_target
+            name: Fill Target
+          - entity: number.adaptive_irrigation_yard_west_max_duration
+            name: Max Duration
+          - entity: number.adaptive_irrigation_yard_west_fallback_duration
+            name: Fallback Duration
+          - entity: number.adaptive_irrigation_yard_west_cooling_threshold
+            name: Cooling Threshold
+          - entity: number.adaptive_irrigation_yard_west_cooling_duration
+            name: Cooling Duration
+          - type: divider
+          - entity: number.yard_west_adaptive_irrigation_yard_west_soak_cycles
+            name: Soak Cycles
+          - entity: number.yard_west_adaptive_irrigation_yard_west_soak_pause
+            name: Soak Pause
+          - type: divider
+          # Diagnostics — calibration governs soak length; keep it visible.
+          - entity: sensor.adaptive_irrigation_yard_west_calibration_rate
+            name: Calibration Rate
+          - entity: sensor.adaptive_irrigation_yard_west_et_today
+            name: ET Today
+          - entity: sensor.adaptive_irrigation_yard_west_rain_forecast
+            name: Rain Forecast
+          - entity: sensor.adaptive_irrigation_yard_west_wind_forecast
+            name: Wind Forecast

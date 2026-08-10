@@ -1,5 +1,107 @@
 # Changelog
 
+## [0.8.0] - 2026-08-10
+
+Two structural changes: watering inverts from *adapt the duration, water often*
+to *adapt the interval, soak deep*, and the integration takes over heat-stress
+cooling from the irrigation controller.
+
+### Added
+- **Heat-stress cooling (syringing)** — per-zone, triggered on measured
+  root-zone temperature rather than a clock or an air-temperature proxy. A zone
+  arms only while its soil is above threshold *and still rising*, so each zone
+  self-times: one that peaks at midday and a west exposure that peaks late
+  afternoon are both treated on the way up, with no per-zone schedule to
+  maintain and no drift as the sun angle changes through the season.
+  - New per-zone config: `soil_temp_sensor`, `cooling_enabled`,
+    `cooling_temp_threshold`, `cooling_duration_minutes`,
+    `cooling_moisture_ceiling`.
+  - New system config: cooling window, max runs per zone per day, minimum
+    interval between runs, and a cooling-specific wind limit (a fine surface
+    spray blows away well below the 25 mph irrigation limit).
+  - Cooling runs never touch `last_watered`, the calibration loop, or the
+    dry-down interval — it is a heat intervention, not irrigation.
+  - The cooling window end is clamped to 18:00 in code regardless of
+    configuration. A canopy left wet overnight invites fungal disease.
+  - Cooling is independent of the zone's Auto Watering switch (it has its own
+    `Heat Cooling` switch) but is still blocked by the master switch and by
+    Water Restriction.
+  - New service `adaptive_irrigation.cool_zone`.
+- **Effectiveness scoring** — every cooling run records the temperature change
+  it achieved (`Last Cooling Delta`). The same system that opens the valve also
+  holds the probe, so runs can be measured instead of assumed: a run that
+  rebounds straight past its starting temperature needs retiming, not
+  repeating.
+- **New entities** — `Root Zone Temperature` (with rise rate and current
+  cooling status as attributes), `Cooling Runs Today`, `Last Cooling Delta`,
+  `Last Cooled`, `Days To Refill`, plus `Refill Point`, `Fill Target`,
+  `Fallback Duration`, `Cooling Threshold` and `Cooling Duration` sliders.
+  `Fallback Duration` was previously config-only, which meant a bad calibration
+  could not be worked around from the dashboard.
+
+### Changed
+- **Interval-adaptive watering** — `Refill Point` and `Fill Target` replace
+  `Soil Threshold` / `threshold + 5`. A zone is now left alone until it dries to
+  its refill point, then soaked back toward field capacity. The dry-down between
+  soaks is deliberate: it is what drives roots downward. Topping up little and
+  often trains roots to stay at the surface.
+- **Dry-down lockout** — moisture-driven watering is suppressed for 18 h after a
+  soak. The probes take hours to finish responding, so re-evaluating sooner acts
+  on a reading that hasn't caught up.
+- **ET is now a predictor, not a target modifier** — it feeds `Days To Refill`
+  (when the next soak falls due) rather than inflating the fill target.
+- **Calibration follows the probe to its peak** instead of sampling once at
+  +30 min. Measured on a live system, a 15-minute application was still raising
+  the probe four hours later (38% → 48%); the +30 min read saw under half the
+  response. The peak is confirmed by 90 minutes without a new maximum, because
+  the probe can sit flat for over an hour mid-climb.
+- **Seedling mode bypasses the interval model** — seedlings have no root system
+  to deepen and must not be dried down.
+- Watering status strings now read `Soaking — N min (soil X% → target Y%)`, and
+  the per-poll "skipped" notification spam is gone.
+
+### Fixed
+- **Soak cycles silently discarded water.** `duration // cycles` floored the
+  per-cycle length and dropped the remainder — a 5-minute run over 4 cycles
+  became 4 × 1 min, losing a fifth of the water and announcing a figure it
+  never delivered. The remainder is now distributed across cycles.
+- **Soak cycling is no longer applied to runs too short to need it.** Cycling
+  exists to prevent runoff on a long run; one-minute pulses only wet the canopy.
+  Below 5 minutes per cycle the run stays continuous.
+- **The post-water guard never engaged for the integration's own runs.**
+  `_valve_seen_on` was only set when a 15-minute poll happened to observe the
+  valve open, which a short run never survives — so the guard was skipped
+  entirely and a zone could fire repeatedly through a morning. It is now set
+  when the valve is opened.
+- **The post-water guard accepted the soil drying out as proof of watering.**
+  The probes report on change only, so comparing `last_updated` answered "has
+  the value changed", not "has a fresh reading arrived" — a downward tick
+  satisfied it. It now requires a genuine rise.
+- **Calibration could only ratchet upward.** Every non-positive result was
+  discarded, so an over-reading stuck permanently while an honest non-response
+  taught nothing. A run of meaningful length that fails to move the probe now
+  revises the rate down, and rates are clamped to a sane range.
+- **External controller runs corrupted the calibration.** A run started by
+  anything else sharing the valves (a controller's own schedule, a manual run
+  from its app) landing inside the follow-up window was credited to our own,
+  much shorter run. Foreign runs are now detected and void the in-flight
+  sample.
+- **`last_watered` is stamped at completion, not at start** — the interval and
+  lockout clocks should run from when the water stopped, not from when a
+  90-minute cycle-and-soak began.
+- **Rain-skip was dead code on most zones.** The `moisture > 85` condition
+  could never be true with a 50% threshold, so the system watered into forecast
+  rain. It now keys off the zone's refill point.
+- **Daily Water Used could freeze across midnight** — rollover depended on a
+  zone coordinator polling after midnight; if that didn't happen the figure
+  stuck. It now reports 0 whenever the stored budget date isn't today.
+
+### Notes
+- Root-training (progressively lowering refill points to deepen roots) records
+  its measurements in this release but the controller itself is deferred — see
+  `TODOS.md`. It must not run while the root zone is hot; roots die back above
+  roughly 85 °F, so deliberate depletion is a spring/autumn technique.
+
 ## [0.7.3] - 2026-06-23
 
 ### Added
